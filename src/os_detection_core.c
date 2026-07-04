@@ -112,6 +112,15 @@ int zmk_os_detection_active_ble_profile_index(void) {
 #endif
 }
 
+uint8_t zmk_os_detection_selected_ble_profile_index(void) {
+#if IS_ENABLED(CONFIG_ZMK_OS_DETECTION_BLE)
+    int index = zmk_ble_active_profile_index();
+    return index < 0 ? 0 : (uint8_t)index;
+#else
+    return 0;
+#endif
+}
+
 enum zmk_os zmk_os_detection_current(void) {
     struct zmk_endpoint_instance endpoint = zmk_endpoint_get_selected();
     switch (endpoint.transport) {

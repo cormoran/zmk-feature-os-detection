@@ -24,17 +24,17 @@
     ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE(                                                       \
         os_detection_ble_detected_##_i, "cormoran__os_detection", "ble_detected", _i,              \
         ZMK_BLE_PROFILE_COUNT, ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32,                                \
-        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN), ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, \
-        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,            \
-        ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
+        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN),                                            \
+        ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,     \
+        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
 
 #define OS_DETECTION_SETTING_OVERRIDE(_i)                                                          \
     ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE(                                                       \
         os_detection_ble_override_##_i, "cormoran__os_detection", "ble_override", _i,              \
         ZMK_BLE_PROFILE_COUNT, ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32,                                \
-        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN), ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, \
-        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,            \
-        ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
+        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN),                                            \
+        ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,     \
+        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
 
 /* CONFIG_ZMK_BLE_PROFILE_COUNT (== CONFIG_BT_MAX_PAIRED, minus split
  * peripherals) defaults to 5; support up to 8 to leave headroom. */

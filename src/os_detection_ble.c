@@ -30,8 +30,8 @@ enum zmk_os zmk_os_classify_ble(const struct ble_fp_stats *stats) {
         return ZMK_OS_MACOS;
     }
 
-    if (stats->report_map_reads == 0 && stats->hids_info_reads == 0 &&
-        stats->pnp_id_reads == 0 && stats->appearance_reads == 0) {
+    if (stats->report_map_reads == 0 && stats->hids_info_reads == 0 && stats->pnp_id_reads == 0 &&
+        stats->appearance_reads == 0) {
         return ZMK_OS_UNKNOWN;
     }
 
@@ -43,8 +43,7 @@ enum zmk_os zmk_os_classify_ble(const struct ble_fp_stats *stats) {
 
     /* Linux BlueZ's HID-over-GATT profile reads Report Map + HIDS Info +
      * Report Reference descriptors but typically skips DIS/Appearance. */
-    if (stats->report_map_reads > 0 && stats->hids_info_reads > 0 &&
-        stats->pnp_id_reads == 0) {
+    if (stats->report_map_reads > 0 && stats->hids_info_reads > 0 && stats->pnp_id_reads == 0) {
         return ZMK_OS_LINUX;
     }
 

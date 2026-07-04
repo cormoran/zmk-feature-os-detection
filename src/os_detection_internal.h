@@ -70,5 +70,12 @@ bool zmk_os_detection_ble_profile_connected(uint8_t profile_index);
 enum zmk_os zmk_os_detection_ble_profile_detected(uint8_t profile_index);
 enum zmk_os zmk_os_detection_ble_profile_override(uint8_t profile_index);
 enum zmk_os zmk_os_detection_ble_profile_effective(uint8_t profile_index);
+/* Returns -ENOTSUP when BLE detection or custom settings aren't compiled in,
+ * -EINVAL for an out-of-range profile_index. */
+int zmk_os_detection_set_ble_override(uint8_t profile_index, enum zmk_os os);
 /* -1 when no BLE profile is the active endpoint (USB active, or nothing connected). */
 int zmk_os_detection_active_ble_profile_index(void);
+/* The profile slot currently selected in ZMK's BLE profile switcher, valid
+ * regardless of whether USB or BLE is the active transport right now.
+ * 0 when BLE is not enabled. */
+uint8_t zmk_os_detection_selected_ble_profile_index(void);

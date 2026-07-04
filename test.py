@@ -114,7 +114,6 @@ class WestCommandsTests(unittest.TestCase):
     def _test_zmk_build(
         self, artifacts_and_expected_build_params: dict[str, ConfigAndDeviceTree]
     ):
-
         for artifact in artifacts_and_expected_build_params.keys():
             shutil.rmtree(self.BUILD_DIR / artifact, ignore_errors=True)
 

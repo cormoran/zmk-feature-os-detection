@@ -7,4 +7,48 @@ config ZMK_OS_DETECTION_STUDIO_RPC
     bool "Enable OS detection custom Studio RPC"
     depends on ZMK_STUDIO
 
+config ZMK_OS_DETECTION_USB
+    bool "Detect host OS via USB enumeration fingerprint"
+    depends on ZMK_USB
+    select USB_DEVICE_BOS
+
+config ZMK_OS_DETECTION_USB_SETTLE_MS
+    int "Debounce (ms) after the last SETUP packet before finalizing the USB guess"
+    depends on ZMK_OS_DETECTION_USB
+    default 200
+
+config ZMK_OS_DETECTION_BLE
+    bool "Detect host OS via BLE GATT access fingerprint"
+    depends on ZMK_BLE
+    select BT_GATT_AUTHORIZATION_CUSTOM
+
+config ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE
+    bool "Opt-in: discover ANCS/AMS/Device Name as a GATT client after pairing"
+    depends on ZMK_OS_DETECTION_BLE
+    select BT_GATT_CLIENT
+
+config ZMK_OS_DETECTION_LAYER_WINDOWS
+    int "Layer to auto-activate when Windows is detected (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_MACOS
+    int "Layer to auto-activate when macOS/iOS is detected (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_LINUX
+    int "Layer to auto-activate when Linux is detected (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_UNKNOWN
+    int "Layer to auto-activate when the OS is unknown (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_TEST_INJECT
+    bool "Test-only: inject recorded fingerprints instead of observing real hardware"
+    default n
+    help
+      For unit tests only (set from tests/test/*.conf). Feeds recorded USB
+      SETUP sequences and BLE stat snapshots into the classifiers at boot,
+      since native_sim has no USB device controller and no BLE.
+
 endif

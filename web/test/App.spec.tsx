@@ -67,7 +67,7 @@ describe("App Component", () => {
       });
 
       expect(screen.getByText(/Disconnect/i)).toBeInTheDocument();
-      expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
+      expect(screen.getByText(/OS Detection State/i)).toBeInTheDocument();
     });
   });
 });

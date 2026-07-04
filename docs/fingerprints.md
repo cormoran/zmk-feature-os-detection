@@ -61,8 +61,10 @@ USB alone cannot distinguish macOS from iOS.
 ## BLE
 
 Same situation as USB: this sandbox has no Bluetooth host controller exposed
-to it for pairing/testing against a real Windows/macOS/Linux/iOS BLE stack
-(`bluetoothctl`/`hcitool` show no local adapter), so the GATT-read-order,
+to it for pairing/testing against a real Windows/macOS/Linux/iOS BLE stack -
+confirmed with `hciconfig -a`, which fails with "Can't open HCI socket:
+Address family not supported by protocol" (`AF_BLUETOOTH` isn't available in
+this container at all, not just "no adapter plugged in"). So the GATT-read-order,
 MTU, and connection-parameter thresholds in `zmk_os_classify_ble()` are, like
 USB, placeholders taken from the general behavior described in the task
 brief and from public documentation of each OS's BLE HID stack, not from a

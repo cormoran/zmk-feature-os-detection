@@ -75,12 +75,15 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_ZMK_STUDIO=y",
                         "CONFIG_ZMK_OS_DETECTION=y",
                         "CONFIG_ZMK_OS_DETECTION_STUDIO_RPC=y",
+                        "CONFIG_ZMK_OS_DETECTION_USB=y",
+                        "CONFIG_USB_DEVICE_BOS=y",
                     ],
                     device=[],
                 ),
                 "os_detection_board_without_rpc": ConfigAndDeviceTree(
                     config=[
                         "CONFIG_ZMK_OS_DETECTION=y",
+                        "CONFIG_ZMK_OS_DETECTION_USB=y",
                         "# CONFIG_ZMK_STUDIO is not set",
                         NotFound("CONFIG_ZMK_OS_DETECTION_STUDIO_RPC"),
                     ],
@@ -93,6 +96,7 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_ZMK_STUDIO=y",
                         "CONFIG_ZMK_OS_DETECTION=y",
                         "CONFIG_ZMK_OS_DETECTION_STUDIO_RPC=y",
+                        "CONFIG_ZMK_OS_DETECTION_USB=y",
                         "CONFIG_ZMK_CUSTOM_SETTINGS=y",
                         "CONFIG_ZMK_CUSTOM_SETTINGS_STUDIO_RPC=y",
                         "CONFIG_ZMK_STUDIO_RPC_RX_BUF_SIZE=128",

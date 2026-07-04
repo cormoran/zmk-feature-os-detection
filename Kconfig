@@ -47,8 +47,14 @@ config ZMK_OS_DETECTION_TEST_INJECT
     bool "Test-only: inject recorded fingerprints instead of observing real hardware"
     default n
     help
-      For unit tests only (set from tests/test/*.conf). Feeds recorded USB
-      SETUP sequences and BLE stat snapshots into the classifiers at boot,
-      since native_sim has no USB device controller and no BLE.
+      For unit tests only (set from tests/*/native_sim.conf). Feeds recorded
+      USB SETUP sequences and BLE stat snapshots into the classifiers at
+      boot, since native_sim has no USB device controller and no BLE.
+      Runs all recorded scenarios sequentially in one process (rather than
+      one process per scenario) because the native_sim USB device
+      controller's USB/IP emulation binds a fixed TCP port
+      (usb_dc_native_posix_adapt.c, port 3240): two CONFIG_ZMK_USB=y
+      native_sim processes running in parallel would otherwise collide on
+      that port.
 
 endif

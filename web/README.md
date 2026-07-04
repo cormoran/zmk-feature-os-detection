@@ -1,13 +1,14 @@
-# ZMK Module Template - Web Frontend
+# zmk-feature-os-detection - Web Frontend
 
-This is a minimal web application template for interacting with ZMK firmware
-modules that implement custom Studio RPC subsystems.
+Web UI for `zmk-feature-os-detection`'s Custom Studio RPC subsystem: shows
+live USB/BLE OS-detection state and lets you set a per-BLE-profile manual
+override. Built from cormoran's ZMK module template.
 
 ## Features
 
-- **Device Connection**: Connect to ZMK devices via Bluetooth (GATT) or Serial
-- **Custom RPC**: Communicate with your custom firmware module using protobuf
-- **React + TypeScript**: Modern web development with Vite for fast builds
+- **Device Connection**: Connect to the keyboard over Web Serial
+- **State view**: USB connection + detected OS, full BLE profile table
+- **BLE overrides**: pin a profile to Windows/macOS/Linux, or back to AUTO
 - **react-zmk-studio**: Uses the `@cormoran/zmk-studio-react-hook` library for
   simplified ZMK integration
 
@@ -35,22 +36,23 @@ npm test
 ```
 src/
 ├── main.tsx              # React entry point
-├── App.tsx               # Main application with connection UI
+├── App.tsx               # Connection UI + OsDetectionSection (state/overrides)
 ├── App.css               # Styles
-└── proto/                # Generated protobuf TypeScript types
-    └── your-name/template/
-        └── template.ts
+└── proto/                # Generated protobuf TypeScript types (gitignored)
+    └── cormoran/os-detection/
+        └── os_detection.ts
 
 test/
-├── App.spec.tsx              # Tests for App component
-└── RPCTestSection.spec.tsx   # Tests for RPC functionality
+├── App.spec.tsx                  # Tests for App component
+└── OsDetectionSection.spec.tsx   # Tests for the state table + override RPC
 ```
 
 ## How It Works
 
 ### 1. Protocol Definition
 
-The protobuf schema is defined in `../proto/your-name/template/template.proto`.
+The protobuf schema is defined in
+`../proto/cormoran/os-detection/os_detection.proto`.
 
 ### 2. Code Generation
 
@@ -73,7 +75,7 @@ import { useZMKApp, ZMKCustomSubsystem } from "@cormoran/zmk-studio-react-hook";
 const { state, connect, findSubsystem, isConnected } = useZMKApp();
 
 // Find your subsystem
-const subsystem = findSubsystem("your_name__template");
+const subsystem = findSubsystem("cormoran__os_detection");
 
 // Create service and make RPC calls
 const service = new ZMKCustomSubsystem(state.connection, subsystem.index);
@@ -105,7 +107,7 @@ import {
 
 const mockZMKApp = createConnectedMockZMKApp({
   deviceName: "Test Device",
-  subsystems: ["your_name__template"],
+  subsystems: ["cormoran__os_detection"],
 });
 
 render(
@@ -115,15 +117,10 @@ render(
 );
 ```
 
-## Customization
+## Publishing
 
-To adapt this template for your own ZMK module:
-
-1. **Update the proto file**: Modify `../proto/your-name/template/template.proto` with
-   your message types
-2. **Regenerate types**: Run `npm run generate`
-3. **Update subsystem identifier**: Change `SUBSYSTEM_IDENTIFIER` in `App.tsx`
-   to match your firmware registration
-4. **Update RPC logic**: Modify the request/response handling in `App.tsx`
-5. **Update tests**: Modify tests to match your custom subsystem identifier and
-   functionality
+Merging a PR into `main` deploys this app to
+https://cormoran.github.io/zmk-feature-os-detection/ via
+`.github/workflows/web-ui.yml`. Pull requests get a Cloudflare Workers
+preview deployment instead (requires `CLOUDFLARE_API_TOKEN` /
+`CLOUDFLARE_ACCOUNT_ID` repo secrets).

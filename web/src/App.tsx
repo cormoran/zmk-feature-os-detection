@@ -6,16 +6,16 @@ import {
   ZMKCustomSubsystem,
   ZMKAppContext,
 } from "@cormoran/zmk-studio-react-hook";
-import { Request, Response } from "./proto/your-name/template/template";
+import { Request, Response } from "./proto/cormoran/os-detection/os_detection";
 
-export const SUBSYSTEM_IDENTIFIER = "your_name__template";
+export const SUBSYSTEM_IDENTIFIER = "cormoran__os_detection";
 
 function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>🔧 ZMK Module Template</h1>
-        <p>Custom Studio RPC Demo</p>
+        <h1>🖥️ ZMK OS Detection</h1>
+        <p>Host OS detection status &amp; BLE overrides</p>
       </header>
 
       <ZMKConnection
@@ -57,7 +57,8 @@ function App() {
 
       <footer className="app-footer">
         <p>
-          <strong>Template Module</strong> - Customize this for your ZMK module
+          <strong>zmk-feature-os-detection</strong> - unofficial custom Studio
+          RPC module
         </p>
       </footer>
     </div>
@@ -121,7 +122,7 @@ export function RPCTestSection() {
         <div className="warning-message">
           <p>
             ⚠️ Subsystem "{SUBSYSTEM_IDENTIFIER}" not found. Make sure your
-            firmware includes the template module.
+            firmware includes the zmk-feature-os-detection module.
           </p>
         </div>
       </section>

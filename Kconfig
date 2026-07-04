@@ -1,10 +1,10 @@
-config ZMK_TEMPLATE_FEATURE
-    bool "Enable template feature"
+config ZMK_OS_DETECTION
+    bool "Enable OS detection feature"
 
-if ZMK_TEMPLATE_FEATURE
+if ZMK_OS_DETECTION
 
-config ZMK_TEMPLATE_FEATURE_STUDIO_RPC
-    bool "Enable template feature custom Studio RPC"
+config ZMK_OS_DETECTION_STUDIO_RPC
+    bool "Enable OS detection custom Studio RPC"
     depends on ZMK_STUDIO
 
 endif

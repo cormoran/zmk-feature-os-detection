@@ -18,8 +18,8 @@ describe("App Component", () => {
     it("should render the application header", () => {
       render(<App />);
 
-      expect(screen.getByText(/ZMK Module Template/i)).toBeInTheDocument();
-      expect(screen.getByText(/Custom Studio RPC Demo/i)).toBeInTheDocument();
+      expect(screen.getByText(/ZMK OS Detection/i)).toBeInTheDocument();
+      expect(screen.getByText(/Host OS detection status/i)).toBeInTheDocument();
     });
 
     it("should render connection button when disconnected", () => {
@@ -31,7 +31,7 @@ describe("App Component", () => {
     it("should render footer", () => {
       render(<App />);
 
-      expect(screen.getByText(/Template Module/i)).toBeInTheDocument();
+      expect(screen.getByText(/zmk-feature-os-detection/i)).toBeInTheDocument();
     });
   });
 
@@ -45,7 +45,7 @@ describe("App Component", () => {
     it("should connect to device when connect button is clicked", async () => {
       mocks.mockSuccessfulConnection({
         deviceName: "Test Keyboard",
-        subsystems: ["your_name__template"],
+        subsystems: ["cormoran__os_detection"],
       });
 
       const { connect: serial_connect } =
@@ -67,7 +67,7 @@ describe("App Component", () => {
       });
 
       expect(screen.getByText(/Disconnect/i)).toBeInTheDocument();
-      expect(screen.getByText(/RPC Test/i)).toBeInTheDocument();
+      expect(screen.getByText(/OS Detection State/i)).toBeInTheDocument();
     });
   });
 });

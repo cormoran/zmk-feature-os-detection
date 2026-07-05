@@ -39,6 +39,10 @@ config ZMK_OS_DETECTION_LAYER_LINUX
     int "Layer to auto-activate when Linux is detected (-1 disables)"
     default -1
 
+config ZMK_OS_DETECTION_LAYER_IOS
+    int "Layer to auto-activate when iOS is detected (-1 disables)"
+    default -1
+
 config ZMK_OS_DETECTION_LAYER_UNKNOWN
     int "Layer to auto-activate when the OS is unknown (-1 disables)"
     default -1

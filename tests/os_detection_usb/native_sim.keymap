@@ -19,7 +19,7 @@
 
 &kscan {
 	events = <
-	ZMK_MOCK_PRESS(0,0,250)
+	ZMK_MOCK_PRESS(0,0,350)
 	ZMK_MOCK_RELEASE(0,0,10)
 	>;
 };

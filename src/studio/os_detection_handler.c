@@ -33,7 +33,7 @@ static int proto_to_zmk_os(cormoran_os_detection_Os os) {
     if (os == cormoran_os_detection_Os_OS_UNSPECIFIED) {
         return ZMK_OS_UNKNOWN;
     }
-    if (os >= cormoran_os_detection_Os_OS_UNKNOWN && os <= cormoran_os_detection_Os_OS_LINUX) {
+    if (os >= cormoran_os_detection_Os_OS_UNKNOWN && os <= cormoran_os_detection_Os_OS_IOS) {
         return (int)os - 1;
     }
     return -1;

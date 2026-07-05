@@ -18,15 +18,15 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-/* All three branches below are VERIFIED signatures (real captures on this
- * workspace's rig against an actual Mac, an actual Windows PC, and an
- * actual Linux machine - see docs/fingerprints.md). Note BOS being
- * requested does NOT discriminate macOS from Linux - both request it once
- * at its minimal header length; only Windows fetches it at more than that.
- * The macOS/Linux split instead comes from how *string* descriptors are
- * read: macOS does a short 2-byte header probe then a full re-read for
- * each one, Linux reads each one directly at the full 255-byte buffer with
- * no header probe. */
+/* All branches below are VERIFIED signatures (real captures on this
+ * workspace's rig against an actual Mac, an actual Windows PC, an actual
+ * Linux machine, and an actual iPhone - see docs/fingerprints.md). Note BOS
+ * being requested does NOT discriminate macOS/iOS from Linux - all three
+ * request it once at its minimal header length; only Windows fetches it at
+ * more than that. The macOS/iOS-vs-Linux split instead comes from how
+ * *string* descriptors are read: macOS/iOS do a short 2-byte header probe
+ * then a full re-read for each one, Linux reads each one directly at the
+ * full 255-byte buffer with no header probe. */
 enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
     if (stats->string_request_count == 0 && !stats->bos_requested) {
         return ZMK_OS_UNKNOWN;
@@ -35,13 +35,17 @@ enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
     bool short_probe_seen = stats->string_wlength_hist[USB_FP_WLENGTH_2] > 0;
     bool full_reread_seen = stats->string_wlength_other > 0;
 
-    /* macOS (VERIFIED, 2026-07-05 real capture): every descriptor - device,
-     * each string, configuration - is read as a short 2-byte header probe
-     * followed by a full-length re-read. BOS is requested once at its
-     * minimal/standard length (sizeof(struct usb_bos_descriptor) == 5),
-     * same as Linux, so it isn't used to distinguish the two here. */
+    /* macOS/iOS (VERIFIED, 2026-07-05 real captures): every descriptor -
+     * device, each string, configuration - is read as a short 2-byte
+     * header probe followed by a full-length re-read. BOS is requested
+     * once at its minimal/standard length (sizeof(struct
+     * usb_bos_descriptor) == 5), same as Linux, so it isn't used to
+     * distinguish those two here. macOS and iOS share this exact
+     * descriptor-read pattern; the only observed difference is that iOS
+     * sends SET_FEATURE(DEVICE_REMOTE_WAKEUP) after enumerating and real
+     * macOS didn't. */
     if (short_probe_seen && full_reread_seen) {
-        return ZMK_OS_MACOS;
+        return stats->remote_wakeup_enabled ? ZMK_OS_IOS : ZMK_OS_MACOS;
     }
 
     /* Linux (VERIFIED, 2026-07-05 real capture): fetches every string
@@ -91,6 +95,13 @@ void zmk_os_detection_observe_setup(const struct usb_setup_packet *setup) {
     if (setup->bRequest == USB_SREQ_SET_ADDRESS) {
         /* Host (re)started enumeration; drop any previous cycle's stats. */
         reset_usb_fp_stats();
+        return;
+    }
+
+    if (setup->bRequest == USB_SREQ_SET_FEATURE && !usb_reqtype_is_to_host(setup) &&
+        setup->wValue == USB_SFS_REMOTE_WAKEUP) {
+        stats.remote_wakeup_enabled = true;
+        k_work_reschedule(&usb_settle_work, K_MSEC(CONFIG_ZMK_OS_DETECTION_USB_SETTLE_MS));
         return;
     }
 
@@ -148,6 +159,15 @@ static void inject_setup(uint8_t bRequest, uint8_t descriptor_type, uint16_t wLe
     zmk_os_detection_observe_setup(&setup);
 }
 
+static void inject_set_feature_remote_wakeup(void) {
+    struct usb_setup_packet setup = {
+        .bmRequestType = 0x00, /* host-to-device, standard, device recipient */
+        .bRequest = USB_SREQ_SET_FEATURE,
+        .wValue = USB_SFS_REMOTE_WAKEUP,
+    };
+    zmk_os_detection_observe_setup(&setup);
+}
+
 /* Matches the real capture in docs/fingerprints.md: no string descriptors
  * at all, device descriptor probed at wLength=64 (not macOS's 8) then the
  * full 18, and both configuration and BOS fetched directly at wLength=255
@@ -175,6 +195,27 @@ static void inject_macos_like(void) {
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 34);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
+}
+
+/* Matches the real capture in docs/fingerprints.md: identical descriptor
+ * read pattern to inject_macos_like() (short probe then full re-read on
+ * every string, minimal BOS), plus a SET_FEATURE(DEVICE_REMOTE_WAKEUP)
+ * after enumeration - the one observed difference between a real iPhone
+ * and real macOS. */
+static void inject_ios_like(void) {
+    inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 8);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 18);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 24);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 24);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 34);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 9);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 34);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
+    inject_set_feature_remote_wakeup();
 }
 
 /* Matches the real capture in docs/fingerprints.md: device descriptor
@@ -212,6 +253,9 @@ static int os_detection_test_inject_init(void) {
     k_sleep(K_MSEC(settle_margin_ms));
 
     inject_macos_like();
+    k_sleep(K_MSEC(settle_margin_ms));
+
+    inject_ios_like();
     k_sleep(K_MSEC(settle_margin_ms));
 
     inject_linux_like();

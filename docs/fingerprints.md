@@ -168,9 +168,10 @@ distinctive Linux-only signal (neither macOS nor Windows requested it at
 all) that isn't wired into the classifier yet — worth adding if the
 string-pattern signal ever proves ambiguous.
 
-**USB fingerprinting is now verified for all three target OSes** (macOS,
-Windows, Linux). Remaining USB caveats are about generalization, not "no
-data at all" - see "Known fragility" below.
+**USB fingerprinting is now verified for macOS, Windows, and Linux**
+(iOS follows further down, once it turned out to actually differ from
+macOS). Remaining USB caveats are about generalization, not "no data at
+all" - see "Known fragility" below.
 
 ### Real Android capture (2026-07-05) — confirms the documented Linux/Android ambiguity
 
@@ -200,6 +201,69 @@ flow. Not classification-relevant (happens after `SET_CONFIGURATION`, well
 past the debounce window that already settled on `ZMK_OS_LINUX`), but
 recorded here in case a future capture shows it's actually a stable,
 distinguishing signal worth acting on.
+
+### Real iPhone (iOS) capture (2026-07-05, verified) — iOS split out from macOS
+
+**Method**: identical recipe again, board's USB-C moved to a real iPhone.
+
+Raw sequence captured, cold boot through the post-enumeration HID `REPORT`
+descriptor read:
+
+```
+GET_DESCRIPTOR(DEVICE)                          wLength=8   (partial probe - same as macOS, not Android/Linux/Windows's 64)
+GET_DESCRIPTOR(DEVICE)                          wLength=18  (full)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=2   (header probe)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=24  (full)
+GET_DESCRIPTOR(STRING, index=1, langid=0x0409)  wLength=2   (header probe)
+GET_DESCRIPTOR(STRING, index=1, langid=0x0409)  wLength=24  (full)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=2   (header probe)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=34  (full)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=9   (header probe)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=34  (full)
+GET_DESCRIPTOR(BOS)                             wLength=5   (minimal header, same as macOS)
+SET_CONFIGURATION(1)
+SET_FEATURE(DEVICE_REMOTE_WAKEUP)               ← not seen in the real macOS capture
+GET_DESCRIPTOR(REPORT, interface recipient)     wLength=77  (HID class request, expected post-enumeration)
+```
+
+Through `BOS`, this is **identical** to the real macOS capture (device
+probed at `wLength=8`, same short-probe-then-full-reread pattern on every
+string and on configuration, minimal 5-byte BOS read) — consistent with
+both sharing Apple's USB stack heritage. The one real, reproducible
+difference: right after `SET_CONFIGURATION`, the iPhone sent
+`SET_FEATURE(DEVICE_REMOTE_WAKEUP)` (`bRequest=0x03`,
+`wValue=0x0001`/`USB_SFS_REMOTE_WAKEUP`, device recipient) — a real macOS
+host did not do this in its capture.
+
+Per the task's request: since there **is** a real, observed difference,
+`ZMK_OS_IOS` was added as its own value (`= 4`, appended after
+`ZMK_OS_LINUX` to keep existing values' numbers stable; proto `OS_IOS = 5`
+for the same reason) rather than continuing to fold iOS into
+`ZMK_OS_MACOS`. `usb_fp_stats` gained a `remote_wakeup_enabled` bool, set
+when `zmk_os_detection_observe_setup()` sees
+`SET_FEATURE(DEVICE_REMOTE_WAKEUP)`; `zmk_os_classify_usb()`'s macOS/iOS
+branch now returns `ZMK_OS_IOS` when that bool is set and `ZMK_OS_MACOS`
+otherwise, everything else about the branch (the short-probe-then-full
+string/config pattern, minimal BOS) staying exactly as the macOS capture
+established it. `inject_ios_like()` replays this real sequence;
+`inject_macos_like()` is unchanged and correctly has
+`remote_wakeup_enabled` stay false.
+
+This split also touches `os_detection_ble.c`: the ANCS/AMS opt-in GATT
+client signal (`ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE`) was previously
+mapped to `ZMK_OS_MACOS`, but ANCS/AMS are services an iPhone/iPad exposes
+to accessories, not something macOS exposes as a BLE peripheral - that
+branch now correctly returns `ZMK_OS_IOS`. This is still an unverified BLE
+placeholder either way (no real BLE capture exists yet), just a more
+technically accurate one.
+
+**Caveat**: this is one data point. `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`
+being iOS-specific-and-always-present is not something that's been checked
+against multiple iOS versions or multiple real Mac sessions run long
+enough to be sure macOS categorically never sends it later in a session
+(the real macOS capture simply wasn't watched past `SET_CONFIGURATION`).
+Treat `ZMK_OS_IOS` as verified-but-narrow, same caution as every other
+branch in this file.
 
 ### RTT capture recipe (for the next real-hardware session)
 
@@ -238,23 +302,25 @@ Control Block not found". Worked around by reading RTT directly with
    the interesting USB lines).
 
 This module's own debug log line for every SETUP packet (`os_detection_usb.c`,
-gated at `LOG_DBG`) plus this recipe is what captured all three real traces
-above.
+gated at `LOG_DBG`) plus this recipe is what captured all real traces
+above (macOS, Windows, Linux, Android, iOS).
 
 ### Still unverified
 
-USB is now verified for all three target OSes. Only **BLE** remains
-entirely unverified (see below) — and even for USB, treat "verified" as
-"verified against one specific version of one specific OS on 2026-07-05",
-not "guaranteed for every version forever". `CONFIG_ZMK_OS_DETECTION_TEST_INJECT`
-lets any future threshold change be regression-tested with
-`tests/os_detection_usb` alone, no hardware required for the
-re-verification step, if a different OS version's real behavior turns out
-to differ from what's captured here.
+USB is now verified for macOS, Windows, Linux, Android (as Linux), and iOS.
+Only **BLE** remains entirely unverified (see below) — and even for USB,
+treat "verified" as "verified against one specific version of one specific
+OS on 2026-07-05", not "guaranteed for every version forever".
+`CONFIG_ZMK_OS_DETECTION_TEST_INJECT` lets any future threshold change be
+regression-tested with `tests/os_detection_usb` alone, no hardware required
+for the re-verification step, if a different OS version's real behavior
+turns out to differ from what's captured here.
 
 Known fragility (see README "Known limitations" for the full list): the
-wLength pattern is OS-version-dependent, ChromeOS enumerates like Linux, and
-USB alone cannot distinguish macOS from iOS.
+wLength pattern is OS-version-dependent. USB alone still cannot distinguish
+ChromeOS from Linux (both share the kernel), but macOS and iOS **are** now
+distinguished (see the iPhone capture above) — narrower than the original
+task brief assumed, on one signal only.
 
 ## BLE
 
@@ -267,9 +333,12 @@ MTU, and connection-parameter thresholds in `zmk_os_classify_ble()` are, like
 USB, placeholders taken from the general behavior described in the task
 brief and from public documentation of each OS's BLE HID stack, not from a
 capture on this specific board. `CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE`
-(ANCS/AMS detection) is Apple-specific and considered higher-confidence than
-the timing-based heuristics once implemented, but still needs real-device
-verification.
+(ANCS/AMS detection) maps to `ZMK_OS_IOS` specifically, not `ZMK_OS_MACOS`
+(ANCS/AMS are services an iPhone/iPad exposes to accessories, not something
+macOS exposes as a BLE peripheral - corrected once the USB capture above
+established that iOS needed to be its own value) and is considered
+higher-confidence than the timing-based heuristics once implemented, but
+still needs real-device verification.
 
 **Action item for a human with the real hardware**: pair the board with a
 Windows PC, a Mac, an iPhone, and a Linux desktop, capture GATT logs (e.g.

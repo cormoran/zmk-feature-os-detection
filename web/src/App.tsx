@@ -24,6 +24,7 @@ const OS_LABELS: Record<Os, string> = {
   [Os.OS_WINDOWS]: "Windows",
   [Os.OS_MACOS]: "macOS",
   [Os.OS_LINUX]: "Linux",
+  [Os.OS_IOS]: "iOS",
   [Os.UNRECOGNIZED]: "Unknown",
 };
 
@@ -32,6 +33,7 @@ const OVERRIDE_OPTIONS = [
   { value: Os.OS_WINDOWS, label: "Windows" },
   { value: Os.OS_MACOS, label: "macOS" },
   { value: Os.OS_LINUX, label: "Linux" },
+  { value: Os.OS_IOS, label: "iOS" },
 ];
 
 function osLabel(os: Os): string {

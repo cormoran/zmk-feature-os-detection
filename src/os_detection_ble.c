@@ -25,9 +25,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
  * description of each OS's BLE HID behavior, not a real capture. */
 enum zmk_os zmk_os_classify_ble(const struct ble_fp_stats *stats) {
     if (stats->ancs_or_ams_present) {
-        /* ANCS/AMS are Apple-only services; if the opt-in GATT client probe
-         * saw them, that's decisive over every other signal. */
-        return ZMK_OS_MACOS;
+        /* ANCS/AMS (Apple Notification Center/Media Service) are exposed by
+         * iPhones/iPads pairing with accessories, not by macOS acting as a
+         * BLE peripheral - if the opt-in GATT client probe saw them, that's
+         * decisive over every other signal, and specifically means iOS. */
+        return ZMK_OS_IOS;
     }
 
     if (stats->report_map_reads == 0 && stats->hids_info_reads == 0 && stats->pnp_id_reads == 0 &&

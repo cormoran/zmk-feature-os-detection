@@ -1,9 +1,18 @@
 # DESIGN: zmk-feature-os-detection
 
-Detect the host OS (Windows / macOS·iOS / Linux / unknown) over USB and BLE,
-raise a ZMK event, optionally auto-switch a layer, and expose state +
+Detect the host OS (Windows / macOS / Linux / iOS / unknown) over USB and
+BLE, raise a ZMK event, optionally auto-switch a layer, and expose state +
 per-BLE-profile manual override through a Custom Studio RPC subsystem +
 Web UI. MIT licensed. Must never reference QMK (GPL-2.0) source.
+
+`ZMK_OS_IOS` was split out from `ZMK_OS_MACOS` as its own value on
+2026-07-05 after a real iPhone USB capture showed a genuine, reproducible
+difference from real macOS (`SET_FEATURE(DEVICE_REMOTE_WAKEUP)` after
+enumeration) despite an otherwise identical descriptor-read pattern - see
+`docs/fingerprints.md`. Before that capture this module (like the original
+task brief) treated "macOS/iOS" as one bucket because USB alone generally
+can't tell Apple's desktop and mobile USB stacks apart; that turned out not
+to be true for this specific signal.
 
 Built from `cormoran/zmk-module-template-with-custom-studio-rpc`
 (`main+custom-studio-protocol`). Depends on `cormoran/zmk`
@@ -23,7 +32,7 @@ confirmed in `app/src/usb.c`) and `cormoran/zmk-feature-custom-settings`.
 ## Public C API (`include/cormoran/os-detection/os_detection.h`)
 
 ```c
-enum zmk_os { ZMK_OS_UNKNOWN = 0, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX };
+enum zmk_os { ZMK_OS_UNKNOWN = 0, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS };
 
 enum zmk_os zmk_os_detection_current(void); // effective OS for active endpoint
 
@@ -72,11 +81,15 @@ config ZMK_OS_DETECTION_LAYER_WINDOWS
     default -1
 
 config ZMK_OS_DETECTION_LAYER_MACOS
-    int "Layer to auto-activate for macOS/iOS (-1 disables)"
+    int "Layer to auto-activate for macOS (-1 disables)"
     default -1
 
 config ZMK_OS_DETECTION_LAYER_LINUX
     int "Layer to auto-activate for Linux (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_IOS
+    int "Layer to auto-activate for iOS (-1 disables)"
     default -1
 
 config ZMK_OS_DETECTION_LAYER_UNKNOWN
@@ -200,8 +213,9 @@ unmodified under `ZMK_OS_DETECTION_TEST_INJECT` on native_sim.
   - C: `bt_conn_cb_register()` → initial connection interval + PHY/DataLen
     update transitions.
   - D (opt-in, `ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE`, default off):
-    post-`security_changed`, discover ANCS/AMS (Apple-only services) and GAP
-    Device Name (0x2A00) prefix as a GATT client.
+    post-`security_changed`, discover ANCS/AMS (exposed by iPhone/iPad
+    pairing with accessories, not by macOS - maps to `ZMK_OS_IOS`, not
+    `ZMK_OS_MACOS`) and GAP Device Name (0x2A00) prefix as a GATT client.
   - Like USB, exact thresholds need real-device logs (task calls this out
     explicitly: "まず実機ログで呼び出され方を確認してから指紋テーブルを作る").
     This environment has no way to pair the board with real Windows/macOS/
@@ -232,7 +246,7 @@ Proto (nanopb, no 64-bit fields):
 syntax = "proto3";
 package cormoran.os_detection;
 
-enum Os { OS_UNSPECIFIED = 0; OS_UNKNOWN = 1; OS_WINDOWS = 2; OS_MACOS = 3; OS_LINUX = 4; }
+enum Os { OS_UNSPECIFIED = 0; OS_UNKNOWN = 1; OS_WINDOWS = 2; OS_MACOS = 3; OS_LINUX = 4; OS_IOS = 5; }
 
 message GetStateRequest {}
 message SetBleOverrideRequest { uint32 profile_index = 1; Os os = 2; }
@@ -307,8 +321,13 @@ seconds) while connected, cleared on unmount/disconnect.
 
 ## Known limitations (→ README)
 
-Same list as the task brief: wLength fingerprints are OS-version-dependent;
-ChromeOS ≈ Linux; iOS ≈ macOS over USB; KVM/switches suppress
+Same list as the task brief, updated after real captures: wLength
+fingerprints are OS-version-dependent; ChromeOS and Android (verified,
+2026-07-05) enumerate identically to Linux over USB and are reported as
+`ZMK_OS_LINUX`, no separate value; iOS *is* distinguished from macOS now
+(verified, 2026-07-05 - see `ZMK_OS_IOS` above), but only by one narrow
+signal (`SET_FEATURE(DEVICE_REMOTE_WAKEUP)`) that could plausibly not hold
+across every macOS/iOS version; KVM/switches suppress
 re-enumeration; `--wrap=usb_handle_bos` requires the legacy USB stack and
 breaks if ZMK migrates to `device_next` (hard CMake error, not silent);
 BLE detection is heuristic — manual per-profile override is the primary UX,

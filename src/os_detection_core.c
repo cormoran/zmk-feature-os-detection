@@ -223,6 +223,8 @@ static int8_t layer_for_os(enum zmk_os os) {
         return CONFIG_ZMK_OS_DETECTION_LAYER_MACOS;
     case ZMK_OS_LINUX:
         return CONFIG_ZMK_OS_DETECTION_LAYER_LINUX;
+    case ZMK_OS_IOS:
+        return CONFIG_ZMK_OS_DETECTION_LAYER_IOS;
     case ZMK_OS_UNKNOWN:
     default:
         return CONFIG_ZMK_OS_DETECTION_LAYER_UNKNOWN;

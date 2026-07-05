@@ -8,6 +8,7 @@ enum Os {
     OS_WINDOWS = 2;
     OS_MACOS = 3;
     OS_LINUX = 4;
+    OS_IOS = 5;
 }
 
 message GetStateRequest {}

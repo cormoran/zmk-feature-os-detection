@@ -10,12 +10,14 @@
 #include <zmk/event_manager.h>
 
 /* Keep values stable: used in custom settings persistence (0 doubles as
- * "no override"/AUTO) and mapped one-to-one to the RPC proto's Os enum. */
+ * "no override"/AUTO) and mapped one-to-one to the RPC proto's Os enum.
+ * Append new values at the end - never renumber existing ones. */
 enum zmk_os {
     ZMK_OS_UNKNOWN = 0,
     ZMK_OS_WINDOWS = 1,
     ZMK_OS_MACOS = 2,
     ZMK_OS_LINUX = 3,
+    ZMK_OS_IOS = 4,
 };
 
 /* OS for the currently active (USB or BLE) endpoint, override applied. */

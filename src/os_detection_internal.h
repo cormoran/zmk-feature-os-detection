@@ -25,6 +25,10 @@ struct usb_fp_stats {
     uint16_t string_request_count;
     bool bos_requested;
     uint16_t bos_wlength;
+    /* SET_FEATURE(DEVICE_REMOTE_WAKEUP) observed after enumeration - real
+     * iPhone capture (2026-07-05) sent this and real macOS didn't, despite
+     * an otherwise identical descriptor-read pattern. See docs/fingerprints.md. */
+    bool remote_wakeup_enabled;
 };
 
 enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats);

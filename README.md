@@ -78,9 +78,10 @@ CONFIG_ZMK_OS_DETECTION_BLE=y
 CONFIG_ZMK_OS_DETECTION_LAYER_WINDOWS=1
 CONFIG_ZMK_OS_DETECTION_LAYER_MACOS=2
 CONFIG_ZMK_OS_DETECTION_LAYER_LINUX=3
+CONFIG_ZMK_OS_DETECTION_LAYER_IOS=4
 CONFIG_ZMK_OS_DETECTION_LAYER_UNKNOWN=-1
 
-# Optional: Apple-only ANCS/AMS probe as an extra BLE signal (off by default)
+# Optional: iPhone/iPad ANCS/AMS probe as an extra BLE signal (off by default)
 CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE=y
 
 # Optional: Custom Studio RPC + Web UI for live state and BLE overrides
@@ -99,7 +100,7 @@ Full option list is in [Kconfig](./Kconfig).
 ```c
 #include <cormoran/os-detection/os_detection.h>
 
-enum zmk_os { ZMK_OS_UNKNOWN, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX };
+enum zmk_os { ZMK_OS_UNKNOWN, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS };
 
 enum zmk_os zmk_os_detection_current(void); // effective OS for the active endpoint
 
@@ -131,10 +132,18 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
 - **Any OS sharing the Linux kernel's USB host stack enumerates like
   Linux over USB and is reported as `ZMK_OS_LINUX`** — ChromeOS, and (real
   capture, 2026-07-05) Android in USB-host/OTG mode too, whose kernel-level
-  enumeration was byte-for-byte identical to desktop Linux's. **USB alone
-  also cannot reliably distinguish macOS from iOS** (both use Apple's USB
-  HID stack). There's no separate Android/ChromeOS/iOS value in `enum
-  zmk_os` - this is by design, not a gap to fill.
+  enumeration was byte-for-byte identical to desktop Linux's. There's no
+  separate Android/ChromeOS value in `enum zmk_os` - this is by design, not
+  a gap to fill.
+- **macOS and iOS *are* distinguished** (real captures, 2026-07-05 - see
+  [docs/fingerprints.md](docs/fingerprints.md)), which is narrower than
+  most USB fingerprinting folklore claims (both use the same Apple USB
+  stack heritage and an almost identical descriptor-read pattern). The one
+  real difference found: iOS sends `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`
+  after enumerating and macOS didn't in the captured session. Treat this as
+  verified-but-narrow - it hasn't been checked across multiple OS versions
+  or a macOS session watched long enough to rule out sending the same
+  request later.
 - **KVM switches and some USB hubs don't force re-enumeration** on switch,
   so USB detection can miss a host change until the next physical
   reconnect.
@@ -154,11 +163,12 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   ZMK.
 - **Split keyboards**: detection only runs on the central side, since only
   the central owns the USB/BLE host connection.
-- USB detection is verified against real captures for all three target OSes
-  (macOS, Windows, Linux — 2026-07-05). All of BLE is still an unverified
-  placeholder - see [docs/fingerprints.md](docs/fingerprints.md) for exactly
-  what was captured, what's still a guess, and how to update either with
-  new real capture data (including a working J-Link RTT capture recipe).
+- USB detection is verified against real captures for macOS, Windows,
+  Linux, and iOS, plus Android confirmed to enumerate identically to Linux
+  (all 2026-07-05). All of BLE is still an unverified placeholder - see
+  [docs/fingerprints.md](docs/fingerprints.md) for exactly what was
+  captured, what's still a guess, and how to update either with new real
+  capture data (including a working J-Link RTT capture recipe).
 
 ## Development
 
@@ -203,9 +213,10 @@ you can trust them:
 
 1. Flash a board with `CONFIG_ZMK_OS_DETECTION_USB=y` (and `_BLE=y` if
    testing BLE) enabled.
-2. **USB**: already verified against a real Mac, a real Windows PC, and a
-   real Linux machine (see [docs/fingerprints.md](docs/fingerprints.md)).
-   If you want to re-verify against a different OS version, plug into that
+2. **USB**: already verified against a real Mac, a real Windows PC, a real
+   Linux machine, a real Android device (OTG host mode), and a real iPhone
+   (see [docs/fingerprints.md](docs/fingerprints.md)). If you want to
+   re-verify against a different OS version, plug into that
    host and capture the enumeration with `usbmon` (Linux: `sudo modprobe
    usbmon; sudo cat /sys/kernel/debug/usb/usbmon/1u`), Wireshark+USBPcap
    (Windows), or Wireshark's built-in USB capture (macOS) - or, if you have

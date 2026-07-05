@@ -1,10 +1,16 @@
 # DESIGN: zmk-feature-os-detection
 
 Detect the host OS (Windows / macOS / Linux / iOS / Android / unknown) over
-USB and BLE, raise a ZMK event, optionally auto-switch a layer, and expose
-state + per-BLE-profile manual override through a Custom Studio RPC
-subsystem + Web UI. MIT licensed. Must never reference QMK (GPL-2.0)
-source.
+USB and BLE, raise a ZMK event, and expose state + per-BLE-profile manual
+override through a Custom Studio RPC subsystem + Web UI. MIT licensed. Must
+never reference QMK (GPL-2.0) source.
+
+It can also optionally auto-switch a keymap layer per detected OS
+(`CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH`, default `n`), but that overlaps
+with [zmk-feature-default-layer](https://github.com/cormoran/zmk-feature-default-layer)
+and consumers should be pointed there instead - see "Layer auto-switch"
+below. The Kconfig defaults to off and the listener code is compiled out
+entirely unless a consumer explicitly opts in.
 
 `ZMK_OS_IOS` was split out from `ZMK_OS_MACOS` as its own value on
 2026-07-05 after a real iPhone USB capture showed a genuine, reproducible
@@ -85,6 +91,15 @@ config ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE
     select BT_GATT_CLIENT
     default n
 
+config ZMK_OS_DETECTION_LAYER_AUTO_SWITCH
+    bool "Auto-activate a keymap layer based on the detected OS"
+    default n
+    help
+      Overlaps with zmk-feature-default-layer, which is recommended
+      instead. Off by default; see "Layer auto-switch" below.
+
+if ZMK_OS_DETECTION_LAYER_AUTO_SWITCH
+
 config ZMK_OS_DETECTION_LAYER_WINDOWS
     int "Layer to auto-activate for Windows (-1 disables)"
     default -1
@@ -108,6 +123,8 @@ config ZMK_OS_DETECTION_LAYER_ANDROID
 config ZMK_OS_DETECTION_LAYER_UNKNOWN
     int "Layer to auto-activate when OS is unknown (-1 disables)"
     default -1
+
+endif # ZMK_OS_DETECTION_LAYER_AUTO_SWITCH
 
 config ZMK_OS_DETECTION_TEST_INJECT
     bool "Test-only: inject recorded fingerprints instead of real hardware"
@@ -166,7 +183,22 @@ the *effective* value for the *currently active* endpoint changes, raise
 `zmk_os_changed` exactly once (dedupe on unchanged value to avoid event
 spam from repeated classifier ticks).
 
-Layer listener: a `ZMK_LISTENER` on `zmk_os_changed` that deactivates the
+## Layer auto-switch (opt-in, not recommended)
+
+Gated entirely behind `CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH`
+(`#if IS_ENABLED(...)` around the whole block in `os_detection_core.c`, and
+the per-OS `ZMK_OS_DETECTION_LAYER_*` int configs live inside
+`if ZMK_OS_DETECTION_LAYER_AUTO_SWITCH` in Kconfig) - default `n`, so the
+listener doesn't exist in the build unless a consumer explicitly opts in.
+
+This exists because the original task brief asked for it, but it overlaps
+with [zmk-feature-default-layer](https://github.com/cormoran/zmk-feature-default-layer),
+a dedicated module for per-host default layer selection with more criteria
+than just OS. Point consumers there first; keep this only for the narrow
+case of wanting layer switching driven solely by this module's OS
+detection, without an extra module dependency.
+
+When enabled: a `ZMK_LISTENER` on `zmk_os_changed` that deactivates the
 previously-selected `ZMK_OS_DETECTION_LAYER_*` layer (if not -1) and
 activates the new one, using `zmk_keymap_layer_activate` /
 `_deactivate`. Guard every layer number against `-1` and against

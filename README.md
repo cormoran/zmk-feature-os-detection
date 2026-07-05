@@ -4,9 +4,12 @@
 [![Test](https://github.com/cormoran/zmk-feature-os-detection/actions/workflows/zmk-module.yml/badge.svg?branch=main)](https://github.com/cormoran/zmk-feature-os-detection/actions/workflows/zmk-module.yml)
 
 A ZMK module that detects the host OS (Windows / macOS·iOS / Linux / unknown)
-over **USB** and **BLE**, raises a `zmk_os_changed` event, can auto-switch a
-keymap layer per detected OS, and exposes live state + per-BLE-profile
-manual overrides through a Custom Studio RPC subsystem and Web UI.
+over **USB** and **BLE**, raises a `zmk_os_changed` event, and exposes live
+state + per-BLE-profile manual overrides through a Custom Studio RPC
+subsystem and Web UI. It can optionally auto-switch a keymap layer per
+detected OS too, though for that use case we recommend
+[zmk-feature-default-layer](https://github.com/cormoran/zmk-feature-default-layer)
+instead - see [Layer auto-switch](#layer-auto-switch-opt-in-not-recommended) below.
 
 This uses the **unofficial** custom ZMK Studio RPC protocol from
 [cormoran/zmk-module-template-with-custom-studio-rpc](https://github.com/cormoran/zmk-module-template-with-custom-studio-rpc).
@@ -74,14 +77,6 @@ CONFIG_ZMK_OS_DETECTION=y
 CONFIG_ZMK_OS_DETECTION_USB=y
 CONFIG_ZMK_OS_DETECTION_BLE=y
 
-# Optional: auto-switch a keymap layer per detected OS (-1 = disabled, default)
-CONFIG_ZMK_OS_DETECTION_LAYER_WINDOWS=1
-CONFIG_ZMK_OS_DETECTION_LAYER_MACOS=2
-CONFIG_ZMK_OS_DETECTION_LAYER_LINUX=3
-CONFIG_ZMK_OS_DETECTION_LAYER_IOS=4
-CONFIG_ZMK_OS_DETECTION_LAYER_ANDROID=5
-CONFIG_ZMK_OS_DETECTION_LAYER_UNKNOWN=-1
-
 # Optional: iPhone/iPad ANCS/AMS probe as an extra BLE signal (off by default)
 CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE=y
 
@@ -106,6 +101,30 @@ enum zmk_os { ZMK_OS_UNKNOWN, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS
 enum zmk_os zmk_os_detection_current(void); // effective OS for the active endpoint
 
 // Subscribe to zmk_os_changed via ZMK_LISTENER/ZMK_SUBSCRIPTION to react to changes.
+```
+
+## Layer auto-switch (opt-in, not recommended)
+
+This module can optionally auto-activate a keymap layer per detected OS by
+listening to its own `zmk_os_changed` event. **This overlaps with
+[zmk-feature-default-layer](https://github.com/cormoran/zmk-feature-default-layer),
+which we recommend instead** - it's a dedicated, more capable module for
+per-host default layer selection. Use this module's built-in switch only if
+you specifically want it driven by this module's OS detection alone, with
+no extra module dependency.
+
+It's off by default and must be explicitly enabled:
+
+```conf
+CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH=y
+
+# Layer to auto-activate per detected OS (-1 = disabled, default)
+CONFIG_ZMK_OS_DETECTION_LAYER_WINDOWS=1
+CONFIG_ZMK_OS_DETECTION_LAYER_MACOS=2
+CONFIG_ZMK_OS_DETECTION_LAYER_LINUX=3
+CONFIG_ZMK_OS_DETECTION_LAYER_IOS=4
+CONFIG_ZMK_OS_DETECTION_LAYER_ANDROID=5
+CONFIG_ZMK_OS_DETECTION_LAYER_UNKNOWN=-1
 ```
 
 ## Web UI

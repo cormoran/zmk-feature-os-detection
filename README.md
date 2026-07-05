@@ -192,6 +192,17 @@ pre-commit install
 pre-commit run --all-files
 ```
 
+If the `prettier`/`eslint`/`jest`/`web-build` hooks fail with `Error:
+Cannot find module 'node:path'`, pre-commit's own managed Node environment
+picked up a stale/wrong Node install for its bootstrap - this was seen
+intermittently in this project's original dev sandbox (which has more than
+one Node on `PATH`) after switching between running `pre-commit` inside a
+nix devshell and outside it, but disappeared for good after `rm -rf
+~/.cache/pre-commit` followed by one clean `pre-commit run --all-files`
+(the corrupted/mismatched cache was the actual cause, not a fundamental
+environment conflict - don't reach for a permanent `SKIP=` workaround for
+this).
+
 ### Tests
 
 ```bash

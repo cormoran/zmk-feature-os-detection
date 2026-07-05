@@ -267,6 +267,10 @@ branch in this file.
 
 ### RTT capture recipe (for the next real-hardware session)
 
+See [hw-capture-recipe.md](hw-capture-recipe.md) for the exact,
+copy-pasteable commands (flash-offset overlay content, build command,
+JLinkExe scripts) - this section is the short prose version.
+
 `JLinkRTTLogger`/`JLinkRTTClient` could not be made to find the RTT control
 block in this environment, even pointed at the exact right address (from
 `arm-zephyr-eabi-nm zmk.elf | grep _SEGGER_RTT`) — it always reported "RTT

@@ -128,8 +128,13 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
 - **USB fingerprints are OS-version-dependent.** The `wLength` pattern a
   given Windows/macOS/Linux version requests can change between OS
   releases; treat the classifier as a best-effort guess, not a guarantee.
-- **ChromeOS enumerates like Linux over USB**, and **USB alone cannot
-  reliably distinguish macOS from iOS** (both use Apple's USB HID stack).
+- **Any OS sharing the Linux kernel's USB host stack enumerates like
+  Linux over USB and is reported as `ZMK_OS_LINUX`** — ChromeOS, and (real
+  capture, 2026-07-05) Android in USB-host/OTG mode too, whose kernel-level
+  enumeration was byte-for-byte identical to desktop Linux's. **USB alone
+  also cannot reliably distinguish macOS from iOS** (both use Apple's USB
+  HID stack). There's no separate Android/ChromeOS/iOS value in `enum
+  zmk_os` - this is by design, not a gap to fill.
 - **KVM switches and some USB hubs don't force re-enumeration** on switch,
   so USB detection can miss a host change until the next physical
   reconnect.

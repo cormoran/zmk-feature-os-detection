@@ -172,6 +172,35 @@ string-pattern signal ever proves ambiguous.
 Windows, Linux). Remaining USB caveats are about generalization, not "no
 data at all" - see "Known fragility" below.
 
+### Real Android capture (2026-07-05) — confirms the documented Linux/Android ambiguity
+
+**Method**: identical recipe again, board's USB-C moved to a real Android
+device (acting as USB host, i.e. OTG).
+
+The kernel-level enumeration sequence was **byte-for-byte identical** to
+the real Linux capture above: `DEVICE(64, 18)` → `BOS(5)` →
+`DEVICE_QUALIFIER(10)` ×3 → `CONFIGURATION(9, 34)` → `STRING(index 0, 2,
+1, 3)` all at `wLength=255` → `SET_CONFIGURATION`. Unsurprising — Android's
+USB host-mode stack is the same Linux kernel USB core as desktop Linux.
+`zmk_os_classify_usb()` therefore reports `ZMK_OS_LINUX` for this Android
+device too, which is *correct given this module's design*: there is no
+separate `ZMK_OS_ANDROID` value in `enum zmk_os` (see the task's own "Known
+limitations" - USB alone can't distinguish OSes sharing a kernel, ChromeOS
+was already called out as the same case), so "reads like Linux" reporting
+`ZMK_OS_LINUX` is the intended, documented outcome, not a bug.
+
+One difference from the Linux capture, after `SET_CONFIGURATION` and the
+HID `REPORT` descriptor read: Android's capture showed *additional*
+trailing string-descriptor re-reads (index 0 again, at `wLength=254` this
+time - one byte less than every other request in either capture, cause
+unknown) that the desktop Linux capture didn't have. Plausibly Android's
+userspace input/HID service doing its own extra descriptor pass on top of
+the kernel's enumeration, distinct from vanilla desktop Linux's udev-driven
+flow. Not classification-relevant (happens after `SET_CONFIGURATION`, well
+past the debounce window that already settled on `ZMK_OS_LINUX`), but
+recorded here in case a future capture shows it's actually a stable,
+distinguishing signal worth acting on.
+
 ### RTT capture recipe (for the next real-hardware session)
 
 `JLinkRTTLogger`/`JLinkRTTClient` could not be made to find the RTT control

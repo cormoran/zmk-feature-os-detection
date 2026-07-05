@@ -20,16 +20,22 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /* See docs/fingerprints.md for what's real vs. placeholder here. Real
- * captures (2026-07-05) found Windows and Linux/BlueZ produce the *same*
- * GATT read set (report map, HIDS info, report reference, DIS PnP ID, GAP
- * appearance all read by both) - the "Linux reads report map+info but skips
- * DIS/appearance" assumption below turned out to be wrong for the BlueZ
- * version tested. Since read-set alone can't disambiguate them, and
- * Windows is the larger install base, the Windows check is deliberately
- * checked first so this ambiguous case defaults to Windows rather than
- * Linux. The Linux-specific branch is kept for BlueZ configurations that
- * genuinely never touch DIS/appearance, but don't expect it to fire for
- * every real Linux host. */
+ * captures (2026-07-05: Windows, a real Linux/BlueZ desktop, and real
+ * Android) found GAP Appearance is the one signal that actually splits
+ * them: Windows and desktop Linux both read it, Android doesn't (even
+ * though Android - like desktop Linux - reads Report Map + HIDS Info + DIS
+ * PnP ID). PnP ID presence/absence, the original assumed Windows/Linux
+ * split, turned out NOT to distinguish anything - all three read it.
+ *
+ * Unlike over USB (where Android shares desktop Linux's kernel-level USB
+ * stack and is deliberately reported as ZMK_OS_LINUX, see
+ * os_detection_usb.c), Android's BLE GATT read pattern IS distinguishable
+ * from desktop Linux's - so it gets its own ZMK_OS_ANDROID value here
+ * instead of folding into ZMK_OS_LINUX. One consequence worth knowing: with
+ * only Windows/Android/iPhone real captures backing this logic,
+ * `zmk_os_classify_ble()` currently has no path that returns ZMK_OS_LINUX
+ * at all - a real desktop Linux capture (which reads Appearance) lands on
+ * the Windows rule below instead, per the existing ambiguity decision. */
 enum zmk_os zmk_os_classify_ble(const struct ble_fp_stats *stats) {
     if (stats->ancs_or_ams_present) {
         /* ANCS/AMS (Apple Notification Center/Media Service) are exposed by
@@ -44,22 +50,27 @@ enum zmk_os zmk_os_classify_ble(const struct ble_fp_stats *stats) {
         return ZMK_OS_UNKNOWN;
     }
 
-    /* Windows (VERIFIED, 2026-07-05 real capture) reads DIS PnP ID and GAP
-     * Appearance in addition to the HIDS report map - checked first since a
-     * real Linux/BlueZ capture the same day showed this pattern too (see
-     * comment above); ambiguous cases resolve to Windows on purpose. */
+    /* Windows (VERIFIED, 2026-07-05 real capture) reads GAP Appearance in
+     * addition to DIS PnP ID and the HIDS report map. Checked first because
+     * a real Linux/BlueZ desktop capture the same day showed this exact
+     * same pattern too (see module comment) - Windows has the larger
+     * install base, so this genuinely ambiguous case deliberately resolves
+     * to Windows rather than Linux (per module owner, 2026-07-05). */
     if (stats->pnp_id_reads > 0 && stats->appearance_reads > 0) {
         return ZMK_OS_WINDOWS;
     }
 
-    /* Linux BlueZ's HID-over-GATT profile reads Report Map + HIDS Info +
-     * Report Reference descriptors and skips DIS/Appearance - true for some
-     * BlueZ configurations, but NOT the one in the 2026-07-05 real capture
-     * (which also read PnP ID + Appearance and matched the Windows rule
-     * above instead). Only reachable when DIS/Appearance are genuinely
-     * absent. */
-    if (stats->report_map_reads > 0 && stats->hids_info_reads > 0 && stats->pnp_id_reads == 0) {
-        return ZMK_OS_LINUX;
+    /* Android (VERIFIED, 2026-07-05 real capture): Report Map + HIDS Info +
+     * (usually) DIS PnP ID get read, but GAP Appearance never does - the
+     * one signal that actually separated it from the real Windows/Linux
+     * desktop captures above (both of which DO read Appearance). "No
+     * Appearance" is the real Android signal, not "no PnP ID" as originally
+     * (wrongly) assumed - see the module comment. Per module owner
+     * (2026-07-05): reported as its own ZMK_OS_ANDROID rather than folded
+     * into ZMK_OS_LINUX, since this pattern - unlike over USB - actually
+     * distinguishes it from real desktop Linux. */
+    if (stats->report_map_reads > 0 && stats->hids_info_reads > 0 && stats->appearance_reads == 0) {
+        return ZMK_OS_ANDROID;
     }
 
     /* Fallback: some HIDS access happened but didn't match a clearer

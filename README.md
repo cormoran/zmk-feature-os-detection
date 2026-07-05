@@ -79,6 +79,7 @@ CONFIG_ZMK_OS_DETECTION_LAYER_WINDOWS=1
 CONFIG_ZMK_OS_DETECTION_LAYER_MACOS=2
 CONFIG_ZMK_OS_DETECTION_LAYER_LINUX=3
 CONFIG_ZMK_OS_DETECTION_LAYER_IOS=4
+CONFIG_ZMK_OS_DETECTION_LAYER_ANDROID=5
 CONFIG_ZMK_OS_DETECTION_LAYER_UNKNOWN=-1
 
 # Optional: iPhone/iPad ANCS/AMS probe as an extra BLE signal (off by default)
@@ -100,7 +101,7 @@ Full option list is in [Kconfig](./Kconfig).
 ```c
 #include <cormoran/os-detection/os_detection.h>
 
-enum zmk_os { ZMK_OS_UNKNOWN, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS };
+enum zmk_os { ZMK_OS_UNKNOWN, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS, ZMK_OS_ANDROID };
 
 enum zmk_os zmk_os_detection_current(void); // effective OS for the active endpoint
 
@@ -133,8 +134,11 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   Linux over USB and is reported as `ZMK_OS_LINUX`** — ChromeOS, and (real
   capture, 2026-07-05) Android in USB-host/OTG mode too, whose kernel-level
   enumeration was byte-for-byte identical to desktop Linux's. There's no
-  separate Android/ChromeOS value in `enum zmk_os` - this is by design, not
-  a gap to fill.
+  separate ChromeOS value in `enum zmk_os` - this is by design, not a gap to
+  fill. **Android is the exception over BLE specifically**: its GATT read
+  pattern (real capture, 2026-07-05) turned out to actually differ from
+  desktop Linux's (it never reads GAP Appearance), so `ZMK_OS_ANDROID` is a
+  distinct value reachable only via BLE detection, not USB.
 - **macOS and iOS *are* distinguished** (real captures, 2026-07-05 - see
   [docs/fingerprints.md](docs/fingerprints.md)), which is narrower than
   most USB fingerprinting folklore claims (both use the same Apple USB
@@ -183,8 +187,9 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
 - USB detection is verified against real captures for macOS, Windows,
   Linux, and iOS, plus Android confirmed to enumerate identically to Linux
   (all 2026-07-05). BLE detection is verified against real captures for
-  Windows, Linux (see above - resolves to Windows on purpose), and
-  (partially - DIS/HIDS Report Map only) macOS and iPhone, also 2026-07-05.
+  Windows, Linux (see above - resolves to Windows on purpose), Android
+  (reported distinctly as `ZMK_OS_ANDROID`), and (partially - DIS/HIDS
+  Report Map only) macOS and iPhone, also 2026-07-05.
 - **BLE cannot distinguish iOS from macOS either.** A real iPhone capture
   read only the HIDS Report Map, matching the fallback rule that also
   covers macOS - `ZMK_OS_IOS` is never produced by a real BLE capture today
@@ -265,11 +270,12 @@ you can trust them:
    / the Web UI's USB card, and update the thresholds in
    `src/os_detection_usb.c` + `docs/fingerprints.md` to match what you
    actually captured.
-3. **BLE**: pair the same board with a Windows PC, a Mac, an iPhone, and a
-   Linux desktop. Check the Web UI's BLE profile table for each; use
-   `btmon` (Linux) or `PacketLogger` (macOS) to see the actual GATT access
-   pattern if the auto-detected OS is wrong, and adjust
-   `src/os_detection_ble.c` + `docs/fingerprints.md`.
+3. **BLE**: pair the same board with a Windows PC, a Mac, an iPhone, an
+   Android device, and a Linux desktop (already done once, 2026-07-05 - see
+   [docs/fingerprints.md](docs/fingerprints.md)). Check the Web UI's BLE
+   profile table for each; use `btmon` (Linux) or `PacketLogger` (macOS) to
+   see the actual GATT access pattern if the auto-detected OS is wrong, and
+   adjust `src/os_detection_ble.c` + `docs/fingerprints.md`.
 4. Confirm overrides set from the Web UI persist across a reboot.
 
 ### Sync changes from template

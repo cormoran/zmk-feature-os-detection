@@ -1,9 +1,10 @@
 # DESIGN: zmk-feature-os-detection
 
-Detect the host OS (Windows / macOS / Linux / iOS / unknown) over USB and
-BLE, raise a ZMK event, optionally auto-switch a layer, and expose state +
-per-BLE-profile manual override through a Custom Studio RPC subsystem +
-Web UI. MIT licensed. Must never reference QMK (GPL-2.0) source.
+Detect the host OS (Windows / macOS / Linux / iOS / Android / unknown) over
+USB and BLE, raise a ZMK event, optionally auto-switch a layer, and expose
+state + per-BLE-profile manual override through a Custom Studio RPC
+subsystem + Web UI. MIT licensed. Must never reference QMK (GPL-2.0)
+source.
 
 `ZMK_OS_IOS` was split out from `ZMK_OS_MACOS` as its own value on
 2026-07-05 after a real iPhone USB capture showed a genuine, reproducible
@@ -12,7 +13,15 @@ enumeration) despite an otherwise identical descriptor-read pattern - see
 `docs/fingerprints.md`. Before that capture this module (like the original
 task brief) treated "macOS/iOS" as one bucket because USB alone generally
 can't tell Apple's desktop and mobile USB stacks apart; that turned out not
-to be true for this specific signal.
+to be true for this specific signal. Note BLE still can't distinguish iOS
+from macOS - the split only applies to USB.
+
+`ZMK_OS_ANDROID` was added the same day after a real Android BLE capture
+showed its GATT read pattern differs from desktop Linux's (no GAP
+Appearance read, unlike Windows/Linux) - see `docs/fingerprints.md`. This
+is BLE-only: over USB, Android's kernel-level enumeration is identical to
+desktop Linux's and is deliberately still reported as `ZMK_OS_LINUX` there
+(no separate value needed for that transport).
 
 Built from `cormoran/zmk-module-template-with-custom-studio-rpc`
 (`main+custom-studio-protocol`). Depends on `cormoran/zmk`
@@ -32,7 +41,7 @@ confirmed in `app/src/usb.c`) and `cormoran/zmk-feature-custom-settings`.
 ## Public C API (`include/cormoran/os-detection/os_detection.h`)
 
 ```c
-enum zmk_os { ZMK_OS_UNKNOWN = 0, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS };
+enum zmk_os { ZMK_OS_UNKNOWN = 0, ZMK_OS_WINDOWS, ZMK_OS_MACOS, ZMK_OS_LINUX, ZMK_OS_IOS, ZMK_OS_ANDROID };
 
 enum zmk_os zmk_os_detection_current(void); // effective OS for active endpoint
 
@@ -90,6 +99,10 @@ config ZMK_OS_DETECTION_LAYER_LINUX
 
 config ZMK_OS_DETECTION_LAYER_IOS
     int "Layer to auto-activate for iOS (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_ANDROID
+    int "Layer to auto-activate for Android over BLE (-1 disables)"
     default -1
 
 config ZMK_OS_DETECTION_LAYER_UNKNOWN
@@ -246,7 +259,7 @@ Proto (nanopb, no 64-bit fields):
 syntax = "proto3";
 package cormoran.os_detection;
 
-enum Os { OS_UNSPECIFIED = 0; OS_UNKNOWN = 1; OS_WINDOWS = 2; OS_MACOS = 3; OS_LINUX = 4; OS_IOS = 5; }
+enum Os { OS_UNSPECIFIED = 0; OS_UNKNOWN = 1; OS_WINDOWS = 2; OS_MACOS = 3; OS_LINUX = 4; OS_IOS = 5; OS_ANDROID = 6; }
 
 message GetStateRequest {}
 message SetBleOverrideRequest { uint32 profile_index = 1; Os os = 2; }

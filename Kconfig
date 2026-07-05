@@ -32,7 +32,7 @@ config ZMK_OS_DETECTION_LAYER_WINDOWS
     default -1
 
 config ZMK_OS_DETECTION_LAYER_MACOS
-    int "Layer to auto-activate when macOS/iOS is detected (-1 disables)"
+    int "Layer to auto-activate when macOS is detected (-1 disables)"
     default -1
 
 config ZMK_OS_DETECTION_LAYER_LINUX
@@ -41,6 +41,10 @@ config ZMK_OS_DETECTION_LAYER_LINUX
 
 config ZMK_OS_DETECTION_LAYER_IOS
     int "Layer to auto-activate when iOS is detected (-1 disables)"
+    default -1
+
+config ZMK_OS_DETECTION_LAYER_ANDROID
+    int "Layer to auto-activate when Android is detected over BLE (-1 disables)"
     default -1
 
 config ZMK_OS_DETECTION_LAYER_UNKNOWN

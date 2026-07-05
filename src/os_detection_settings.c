@@ -104,7 +104,7 @@ enum zmk_os zmk_os_detection_settings_get_override(uint8_t profile_index) {
 
 int zmk_os_detection_settings_set_override(uint8_t profile_index, enum zmk_os os) {
     if (os != ZMK_OS_UNKNOWN && os != ZMK_OS_WINDOWS && os != ZMK_OS_MACOS && os != ZMK_OS_LINUX &&
-        os != ZMK_OS_IOS) {
+        os != ZMK_OS_IOS && os != ZMK_OS_ANDROID) {
         return -EINVAL;
     }
     return write_setting("ble_override", profile_index, os, ZMK_CUSTOM_SETTING_WRITE_MODE_PERSIST);

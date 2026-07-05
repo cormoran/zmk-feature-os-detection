@@ -420,21 +420,23 @@ appearance=1`), same set of characteristics touched, only counts differ
 (not a meaningful signal). MTU was 0 in both captures - `att_mtu` isn't
 reliably populated yet, a separate gap worth investigating.
 
-This means the `zmk_os_classify_ble()` GATT-read-set heuristic **cannot
-actually distinguish real Windows from real Linux/BlueZ** - the "Linux
-skips DIS/Appearance" assumption baked into the classifier's Linux branch
-doesn't hold for the BlueZ version tested here. The only difference spotted
-so far is connection parameters (Windows: interval 12, timeout 200;
+This means PnP ID presence/absence, the *original* assumed Windows/Linux
+split, **cannot actually distinguish real Windows from real Linux/BlueZ** -
+both read it. The only difference spotted between these two specific
+captures was connection parameters (Windows: interval 12, timeout 200;
 Linux: interval 12, **latency 30**, timeout 400) - a single sample each,
-not yet trustworthy as a real discriminator.
+not trustworthy as a real discriminator on its own.
 
 **Decision (2026-07-05, per module owner)**: given this ambiguity is real
 and not just a missing threshold, and Windows has the larger install base
 among likely users of this module, `zmk_os_classify_ble()` deliberately
 checks the Windows rule before the Linux rule so this specific ambiguous
-GATT pattern resolves to `ZMK_OS_WINDOWS`. The Linux-specific branch is
-kept (for BlueZ configurations that genuinely don't read DIS/Appearance)
-but is known to not fire for at least one real, current BlueZ version.
+GATT pattern (PnP ID + Appearance both present) resolves to `ZMK_OS_WINDOWS`.
+See the real Android capture below for how the Linux branch's actual
+condition was later corrected from "no PnP ID" (wrong) to "no Appearance"
+(right) - this decision still holds with that fix in place, since this
+Linux desktop capture read Appearance too and still lands on the Windows
+rule above, unchanged.
 
 ### Real iPhone capture (2026-07-05, verified) — confirms iOS is NOT distinguished from macOS over BLE yet
 
@@ -471,3 +473,51 @@ documented general preference for BLE address privacy on iOS, but
 implemented or acted on, just noted as a promising direction if iOS/macOS
 disambiguation is worth pursuing later (needs more than one sample per OS
 before trusting it).
+
+### Real Android capture (2026-07-05, verified) — Android IS distinguishable from Linux over BLE, unlike over USB
+
+A real Android device connected using a **random** address
+(`53:C8:54:41:01:33 (random)`) - same as the iPhone capture, unlike the
+public addresses macOS/Windows/desktop-Linux all used. It did a much more
+thorough service walk than any other capture (over a dozen generic `2803`
+characteristic-declaration reads), then read: DIS PnP ID (`2a50`), HIDS
+Info (`2a4a`), HIDS Report Map (`2a4b`, four times), plus untracked
+characteristics (Database Hash, Battery Level, Peripheral Preferred
+Connection Parameters). **GAP Appearance was never read.** Connection
+interval settled at 12 (15ms), latency 30, timeout 400 (4s) - notably the
+*same* latency/timeout as the real Linux desktop capture above, unlike
+Windows's (latency 0, timeout 200).
+
+With `report_map>0`, `hids_info>0`, `pnp_id>0`, and `appearance==0`, this
+doesn't match the Windows rule (needs `appearance>0`) - so unlike the
+desktop Linux capture (which does read Appearance and lands on Windows),
+**Android's absence of an Appearance read is a real, working signal that
+separates it from both Windows and desktop Linux.**
+
+This exposed two real, evidence-based fixes:
+
+1. **The Linux rule's condition was wrong.** It originally checked
+   `pnp_id_reads == 0`, based on the pre-real-data assumption that Linux
+   skips DIS entirely. Real data across Windows/desktop-Linux/Android shows
+   that assumption never held - all three read PnP ID. The rule was
+   corrected to check `appearance_reads == 0` instead, which is what
+   actually separates Android from Windows/desktop-Linux in every real
+   capture collected so far.
+2. **Android now gets its own `ZMK_OS_ANDROID` value over BLE** (per module
+   owner, 2026-07-05), unlike over USB where it's deliberately folded into
+   `ZMK_OS_LINUX` (kernel-level USB enumeration is identical there - see
+   the USB section above). The BLE GATT read pattern is NOT identical
+   between Android and desktop Linux (this capture proves it), so folding
+   them together over BLE would throw away a real, working signal for no
+   reason. `zmk_os_classify_ble()`'s corrected Linux-shaped rule
+   (`report_map>0 && hids_info>0 && appearance==0`) now returns
+   `ZMK_OS_ANDROID` instead of `ZMK_OS_LINUX`.
+
+One consequence worth being explicit about: with only Windows, desktop
+Linux, and Android real captures backing this logic, `zmk_os_classify_ble()`
+currently has **no path that returns `ZMK_OS_LINUX` at all** - a real
+desktop Linux connection (which reads Appearance) lands on the Windows
+rule instead, per the existing Windows/Linux ambiguity decision above. If
+a future real capture from a Linux desktop that genuinely skips Appearance
+ever turns up, it would be misclassified as Android by the current logic
+- something to watch for, not yet observed.

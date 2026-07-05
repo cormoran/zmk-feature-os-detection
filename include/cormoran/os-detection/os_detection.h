@@ -18,6 +18,7 @@ enum zmk_os {
     ZMK_OS_MACOS = 2,
     ZMK_OS_LINUX = 3,
     ZMK_OS_IOS = 4,
+    ZMK_OS_ANDROID = 5,
 };
 
 /* OS for the currently active (USB or BLE) endpoint, override applied. */

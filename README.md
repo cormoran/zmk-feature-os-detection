@@ -154,10 +154,27 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   error rather than a silently-broken feature) - the long-term fix is an
   observation hook contributed to ZMK itself
   ([zmkfirmware/zmk#2553](https://github.com/zmkfirmware/zmk/issues/2553)).
-- **BLE detection is inherently heuristic.** Treat per-profile manual
-  override via the Web UI as the primary way to get a reliable result;
-  auto-detection is only a first guess, refined as more GATT signals
-  arrive.
+- **BLE detection is inherently heuristic, and currently reports live with
+  no debounce.** The reported OS can visibly change multiple times within
+  one connection as more GATT characteristics get read (a real Windows
+  capture on 2026-07-05 briefly reported Linux, then macOS, before settling
+  on Windows within about 2 seconds) - see
+  [docs/fingerprints.md](docs/fingerprints.md)'s "Real bug this capture
+  exposed" note. Treat per-profile manual override via the Web UI as the
+  primary way to get a reliable result; auto-detection is only a first
+  guess, refined as more GATT signals arrive, and anything reacting to
+  `zmk_os_changed` mid-connection (e.g. auto-layer-switch) can see a
+  transient wrong value.
+- **BLE cannot reliably distinguish Windows from Linux.** Real captures
+  (2026-07-05, both a real Windows PC and this project's own Linux
+  dev host's BlueZ) read the *identical* set of GATT characteristics -
+  the "Linux skips DIS PnP ID/GAP Appearance" assumption doesn't hold for
+  at least one real, current BlueZ version. Since there's no reliable
+  read-set signal to split them, `zmk_os_classify_ble()` deliberately
+  resolves this ambiguous case to `ZMK_OS_WINDOWS` (larger install base) -
+  Linux users hitting this should use the Web UI's manual per-profile
+  override. See [docs/fingerprints.md](docs/fingerprints.md)'s "Real Linux
+  capture" section for the full data and reasoning.
 - **Custom Studio RPC is an unofficial protocol** and requires the
   `cormoran/zmk` fork (`main+custom-studio-protocol`) rather than upstream
   ZMK.
@@ -165,10 +182,18 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   the central owns the USB/BLE host connection.
 - USB detection is verified against real captures for macOS, Windows,
   Linux, and iOS, plus Android confirmed to enumerate identically to Linux
-  (all 2026-07-05). All of BLE is still an unverified placeholder - see
-  [docs/fingerprints.md](docs/fingerprints.md) for exactly what was
-  captured, what's still a guess, and how to update either with new real
-  capture data (including a working J-Link RTT capture recipe).
+  (all 2026-07-05). BLE detection is verified against real captures for
+  Windows, Linux (see above - resolves to Windows on purpose), and
+  (partially - DIS/HIDS Report Map only) macOS and iPhone, also 2026-07-05.
+- **BLE cannot distinguish iOS from macOS either.** A real iPhone capture
+  read only the HIDS Report Map, matching the fallback rule that also
+  covers macOS - `ZMK_OS_IOS` is never produced by a real BLE capture today
+  (the ANCS/AMS-based signal meant to detect it,
+  `CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE`, is an unimplemented
+  Kconfig stub). See [docs/fingerprints.md](docs/fingerprints.md)'s "Real
+  iPhone capture" section for exactly what was captured, what's still a
+  guess, and how to update either with new real capture data (including a
+  working J-Link RTT capture recipe).
 
 ## Development
 

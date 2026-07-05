@@ -328,24 +328,146 @@ task brief assumed, on one signal only.
 
 ## BLE
 
-Same situation as USB: this sandbox has no Bluetooth host controller exposed
-to it for pairing/testing against a real Windows/macOS/Linux/iOS BLE stack -
-confirmed with `hciconfig -a`, which fails with "Can't open HCI socket:
-Address family not supported by protocol" (`AF_BLUETOOTH` isn't available in
-this container at all, not just "no adapter plugged in"). So the GATT-read-order,
-MTU, and connection-parameter thresholds in `zmk_os_classify_ble()` are, like
-USB, placeholders taken from the general behavior described in the task
-brief and from public documentation of each OS's BLE HID stack, not from a
-capture on this specific board. `CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE`
-(ANCS/AMS detection) maps to `ZMK_OS_IOS` specifically, not `ZMK_OS_MACOS`
-(ANCS/AMS are services an iPhone/iPad exposes to accessories, not something
-macOS exposes as a BLE peripheral - corrected once the USB capture above
-established that iOS needed to be its own value) and is considered
-higher-confidence than the timing-based heuristics once implemented, but
-still needs real-device verification.
+Like USB, this sandbox itself has no Bluetooth host controller usable for
+pairing (`hciconfig -a` fails with "Address family not supported by
+protocol" - no `AF_BLUETOOTH` at all). But the same trick that unblocked USB
+works here too: the physical XIAO board can actually be paired over BLE with
+a real host while J-Link SWD/RTT logging keeps working from this sandbox
+(electrically independent radios). `os_detection_ble.c` was extended with
+per-event `LOG_DBG` lines (every GATT read, MTU update, connection
+parameter update, and the live `ble_fp_stats` before each classification -
+mirroring what `os_detection_usb.c` already did for SETUP packets) to make
+this capturable. See `docs/hw-capture-recipe.md` for the exact commands;
+the BLE-specific differences from the USB recipe are `CONFIG_ZMK_BLE=y`
+(don't disable it - it's what's being tested this time) and a much bigger
+`CONFIG_SEGGER_RTT_BUFFER_SIZE_UP` (65536, not 8192) since BLE connection
+churn is far chattier than a single USB enumeration.
 
-**Action item for a human with the real hardware**: pair the board with a
-Windows PC, a Mac, an iPhone, and a Linux desktop, capture GATT logs (e.g.
-`btmon` on Linux, `PacketLogger` on macOS, or firmware-side `LOG_INF` of
-`struct ble_fp_stats` before classification — the module logs this at `DBG`
-level), and update the thresholds in `os_detection_ble.c`.
+**Sandbox-specific gotcha that cost significant time**: this rig's Linux
+host itself has a Bluetooth controller (`5C:87:9C:0B:32:DF`) with its own
+stale bond to the board from unrelated earlier testing (`EA:7D:49:6E:DE:B4`,
+"Module Test"), which auto-reconnects and fails authentication in a tight
+loop, consuming the RTT buffer and confusing capture attempts. Access this
+host's BlueZ via `DBUS_SYSTEM_BUS_ADDRESS=unix:path=/mnt/host-dbus/system_bus_socket
+bluetoothctl` (path may vary - was `/run/host-dbus/...` before, changed to
+`/mnt/host-dbus/...`; a bare `bluetoothctl` hangs at "Waiting to connect to
+bluetoothd" without this), `select 5C:87:9C:0B:32:DF`, then `paired-devices`
++ `remove <addr>` to clear it. Also: **`JLinkExe`'s `loadbin` does *not*
+erase flash before writing** - writing all-`0xFF` over a NOR flash sector
+that already holds real data is a silent no-op (flash can only clear bits
+1→0 without an erase cycle), so the `storage_partition`-wipe trick used for
+USB captures (§1 of `hw-capture-recipe.md`) never actually worked for BLE
+bond data. Verify erasure with a direct `mem32` read after erasing, and use
+`erase <start>, <end>` (a *ranged* sector erase, not the blanket full-chip
+`erase`) instead of `loadbin` when the goal is to actually clear a region:
+```
+JLinkExe ... -CommandFile <(echo -e "erase 0xD4000, 0xF4000\nmem32 0xD4000, 0x10\nexit")
+```
+
+### Real macOS capture (2026-07-05, verified, partial)
+
+A real Mac connected (`bt_smp` security level 2 - encrypted, unauthenticated)
+and, in the observed window, only explored the Device Information Service:
+`2a29` (Manufacturer Name), `2a24` (Model Number), `2a50` (DIS PnP ID, twice)
+- no HIDS (Report Map/Info) access happened before the connection went idle.
+ATT MTU was 65, connection interval 24 (30ms), later renegotiated to 12
+(15ms)/latency 0/timeout 72 (720ms). `zmk_os_classify_ble()` classified this
+as `ZMK_OS_MACOS`, but only via the **fallback** branch (no report_map,
+hids_info, or appearance seen) - i.e. this data point doesn't yet exercise a
+macOS-*specific* rule, it just doesn't match the Windows or Linux rules
+either. Treat "macOS classifies correctly" as true-so-far but weakly
+verified until a capture shows it actually reading HIDS.
+
+### Real Windows capture (2026-07-05, verified)
+
+A real Windows PC connected, reached security level 2, and did a much more
+thorough GATT walkthrough than macOS: HIDS Report (`2a4d`), HIDS Report Map
+(`2a4b`), HIDS Info (`2a4a`), DIS PnP ID (`2a50`), Manufacturer Name/Model
+Number, Battery Level, GAP Appearance (`2a01`), GAP Device Name, plus several
+generic descriptor/declaration reads (`2803`, `2902`, `2908`, `2904`) not
+tracked as signals. Connection interval started at 15 (18.75ms), later
+renegotiated to 12 (15ms)/timeout 200 (2s).
+
+This is the first BLE data point that exercises the Windows-*specific* rule
+(`pnp_id > 0 && appearance > 0`) rather than falling back, and it correctly
+settled on `ZMK_OS_WINDOWS` - a real, if narrow, validation of the existing
+placeholder logic.
+
+**Real bug this capture exposed**: `zmk_os_classify_ble()` is called and its
+result reported live after *every single* GATT read (no debounce, unlike
+USB's `usb_settle_work` delay), so the reported OS visibly changes as more
+characteristics get read within one connection. This capture's actual
+sequence of *reported* values was UNKNOWN → `ZMK_OS_MACOS` (fallback, once
+only report_map was seen) → **`ZMK_OS_LINUX`** (once hids_info arrived too,
+satisfying the Linux rule `report_map>0 && hids_info>0 && pnp_id==0`) →
+`ZMK_OS_MACOS` again (once pnp_id arrived, breaking the Linux match) →
+finally `ZMK_OS_WINDOWS` (once appearance arrived too) - four different
+classifications inside about 1.8 seconds for what is actually one Windows
+host. Anything reading `zmk_os_detection_current()` or the `zmk_os_changed`
+event mid-connection (e.g. an auto-layer-switch) could act on the wrong,
+transient value. **Not fixed yet** - worth a debounce similar to USB's
+before relying on the auto-layer-switch feature over BLE.
+
+### Real Linux capture (2026-07-05, verified) — found Windows/Linux are NOT distinguishable this way
+
+Paired directly from this sandbox's own host machine (real BlueZ, driven via
+`bluetoothctl` over the host D-Bus socket - see the sandbox-note above) to
+rule out any doubt about it being a "real enough" Linux BLE stack. The
+resulting GATT read pattern: `report_map=2 hids_info=1 report_ref=2
+pnp_id=2 appearance=1` - **structurally identical** to the real Windows
+capture above (`report_map=2 hids_info=1 report_ref=2 pnp_id=1
+appearance=1`), same set of characteristics touched, only counts differ
+(not a meaningful signal). MTU was 0 in both captures - `att_mtu` isn't
+reliably populated yet, a separate gap worth investigating.
+
+This means the `zmk_os_classify_ble()` GATT-read-set heuristic **cannot
+actually distinguish real Windows from real Linux/BlueZ** - the "Linux
+skips DIS/Appearance" assumption baked into the classifier's Linux branch
+doesn't hold for the BlueZ version tested here. The only difference spotted
+so far is connection parameters (Windows: interval 12, timeout 200;
+Linux: interval 12, **latency 30**, timeout 400) - a single sample each,
+not yet trustworthy as a real discriminator.
+
+**Decision (2026-07-05, per module owner)**: given this ambiguity is real
+and not just a missing threshold, and Windows has the larger install base
+among likely users of this module, `zmk_os_classify_ble()` deliberately
+checks the Windows rule before the Linux rule so this specific ambiguous
+GATT pattern resolves to `ZMK_OS_WINDOWS`. The Linux-specific branch is
+kept (for BlueZ configurations that genuinely don't read DIS/Appearance)
+but is known to not fire for at least one real, current BlueZ version.
+
+### Real iPhone capture (2026-07-05, verified) — confirms iOS is NOT distinguished from macOS over BLE yet
+
+A real iPhone connected using a **random** address (`4D:FD:77:9F:F9:75
+(random)`) - notably different from every other real capture so far
+(macOS/Windows/Linux all connected with a **public** address). Read only
+`2a4b` (HIDS Report Map, twice) plus untracked characteristics (Device
+Name, a Report Reference descriptor, one generic declaration, Battery
+Level) - **no** DIS PnP ID, no GAP Appearance, no HIDS Info were read at
+all. Connection interval 12 (15ms), latency 4, timeout 100 (1s).
+
+With `report_map>0` and everything else zero, this doesn't match the
+Windows or Linux rules and falls to the fallback branch, same as the
+earlier partial macOS capture - `zmk_os_classify_ble()` reports
+`ZMK_OS_MACOS`, not `ZMK_OS_IOS`. This confirms what was predicted before
+capturing: `CONFIG_ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE` (the ANCS/AMS
+signal meant to distinguish iOS) is a Kconfig-only stub - it selects
+`BT_GATT_CLIENT` but no code anywhere performs the actual ANCS/AMS
+discovery/read, so `ble_fp_stats.ancs_or_ams_present` is never set `true`
+by anything, and **iOS and macOS are indistinguishable in this module's
+BLE detection today** (they share the exact same fallback outcome).
+
+**Decision (2026-07-05, per module owner)**: same reasoning as the
+Windows/Linux ambiguity above - since this fallback case genuinely can't
+tell iOS and macOS apart today, and it already unconditionally returns
+`ZMK_OS_MACOS`, that's kept as the deliberate default (no code change was
+needed - the existing fallback already resolves this exact way).
+
+**Unverified lead worth following up**: the random-vs-public address type
+difference (iPhone: random: every other real capture: public) is
+consistent across the one sample each collected here and matches Apple's
+documented general preference for BLE address privacy on iOS, but
+`ble_fp_stats` doesn't currently record address type at all - this isn't
+implemented or acted on, just noted as a promising direction if iOS/macOS
+disambiguation is worth pursuing later (needs more than one sample per OS
+before trusting it).

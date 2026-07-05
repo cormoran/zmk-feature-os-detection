@@ -253,7 +253,12 @@ actual fingerprint thresholds need verification against real hosts before
 you can trust them:
 
 1. Flash a board with `CONFIG_ZMK_OS_DETECTION_USB=y` (and `_BLE=y` if
-   testing BLE) enabled.
+   testing BLE) enabled - `tests/zmk-config`'s `os_detection_board_with_rpc`
+   and `os_detection_custom_settings_board` artifacts already have this
+   (plus [zmk-module-ble-management](https://github.com/cormoran/zmk-module-ble-management)
+   and `CONFIG_ZMK_STUDIO_LOCKING=n`, so you can switch/unpair BLE profiles
+   from its web UI and connect Studio without an unlock key-combo while
+   repeatedly re-pairing to different hosts below).
 2. **USB**: already verified against a real Mac, a real Windows PC, a real
    Linux machine, a real Android device (OTG host mode), and a real iPhone
    (see [docs/fingerprints.md](docs/fingerprints.md)). If you want to

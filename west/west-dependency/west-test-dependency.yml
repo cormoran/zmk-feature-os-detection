@@ -16,3 +16,9 @@ manifest:
       remote: cormoran
       revision: main
       import: true
+    # Used only by tests/zmk-config to make manual real-hardware
+    # verification easier (switch/unpair BLE profiles from a web UI instead
+    # of key combos) - not a functional dependency of this module.
+    - name: zmk-module-ble-management
+      remote: cormoran
+      revision: main

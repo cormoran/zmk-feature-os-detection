@@ -85,6 +85,42 @@ describe("OsDetectionSection Component", () => {
       expect(screen.getByTestId("ble-detected-0")).toHaveTextContent("macOS");
     });
 
+    it("does not spam RPC calls when findSubsystem returns a fresh object every call (regression: infinite refresh)", async () => {
+      const callRPC = jest
+        .spyOn(ZMKCustomSubsystem.prototype, "callRPC")
+        .mockResolvedValue(encodedState());
+
+      const mockZMKApp = createConnectedMockZMKApp({
+        deviceName: "Test Device",
+        subsystems: [SUBSYSTEM_IDENTIFIER],
+      });
+      // The real useZMKApp().findSubsystem allocates a new { index, identifier }
+      // object on every call; this test helper's default returns the same
+      // array element every time, which is why this bug wasn't caught by the
+      // other tests. Match production behavior here.
+      mockZMKApp.findSubsystem = jest.fn(() => ({
+        index: 0,
+        identifier: SUBSYSTEM_IDENTIFIER,
+      }));
+
+      render(
+        <ZMKAppProvider value={mockZMKApp}>
+          <OsDetectionSection />
+        </ZMKAppProvider>
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId("usb-detected")).toHaveTextContent("Linux");
+      });
+
+      // Give React plenty of room to keep re-fetching if the effect were
+      // retriggering on every render. This is well under POLL_INTERVAL_MS,
+      // so any extra calls can only come from the bug, not the real poll.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      expect(callRPC.mock.calls.length).toBeLessThanOrEqual(2);
+    });
+
     it("should send set_ble_override with the correct payload", async () => {
       const callRPC = jest
         .spyOn(ZMKCustomSubsystem.prototype, "callRPC")

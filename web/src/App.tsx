@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useMemo, useState } from "react";
 import "./App.css";
 import { connect as serial_connect } from "@zmkfirmware/zmk-studio-ts-client/transport/serial";
 import {
@@ -103,7 +103,15 @@ export function OsDetectionSection() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const subsystem = zmkApp?.findSubsystem(SUBSYSTEM_IDENTIFIER);
+  // findSubsystem() allocates a new object on every call, so calling it
+  // directly in the render body would give fetchState a new identity every
+  // render (even when nothing changed), retriggering the effect below
+  // forever. useMemo keeps `subsystem` referentially stable across renders
+  // that don't change zmkApp itself.
+  const subsystem = useMemo(
+    () => zmkApp?.findSubsystem(SUBSYSTEM_IDENTIFIER),
+    [zmkApp]
+  );
 
   const fetchState = useCallback(async () => {
     if (!zmkApp?.state.connection || !subsystem) return;

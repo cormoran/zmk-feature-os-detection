@@ -79,6 +79,11 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_USB_DEVICE_BOS=y",
                         "CONFIG_ZMK_OS_DETECTION_BLE=y",
                         "CONFIG_BT_GATT_AUTHORIZATION_CUSTOM=y",
+                        # zmk-module-ble-management + unlocked Studio, for
+                        # easier manual real-hardware verification
+                        "CONFIG_ZMK_BLE_MANAGEMENT=y",
+                        "CONFIG_ZMK_BLE_MANAGEMENT_STUDIO_RPC=y",
+                        "# CONFIG_ZMK_STUDIO_LOCKING is not set",
                     ],
                     device=[],
                 ),
@@ -105,6 +110,11 @@ class WestCommandsTests(unittest.TestCase):
                         "CONFIG_ZMK_CUSTOM_SETTINGS_STUDIO_RPC=y",
                         "CONFIG_ZMK_STUDIO_RPC_RX_BUF_SIZE=128",
                         "CONFIG_ZMK_LOW_PRIORITY_THREAD_STACK_SIZE=2048",
+                        # zmk-module-ble-management + unlocked Studio, for
+                        # easier manual real-hardware verification
+                        "CONFIG_ZMK_BLE_MANAGEMENT=y",
+                        "CONFIG_ZMK_BLE_MANAGEMENT_STUDIO_RPC=y",
+                        "# CONFIG_ZMK_STUDIO_LOCKING is not set",
                     ],
                     device=[],
                 ),

@@ -18,9 +18,10 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-/* See docs/fingerprints.md: these thresholds are UNVERIFIED placeholders
- * (no packet-level USB capture was possible in the environment this module
- * was written in, on any OS). Replace them once real captures exist -
+/* macOS branch below is a VERIFIED signature (real capture on this
+ * workspace's rig against an actual Mac, see docs/fingerprints.md). Windows
+ * and Linux are still UNVERIFIED placeholders - no real Windows/Linux
+ * capture has been possible yet. Replace them once real captures exist -
  * CONFIG_ZMK_OS_DETECTION_TEST_INJECT lets that be done with a unit test
  * alone, no hardware required. */
 enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
@@ -28,32 +29,35 @@ enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
         return ZMK_OS_UNKNOWN;
     }
 
-    int distinct_wlength_buckets = 0;
-    for (int i = 0; i < USB_FP_WLENGTH_COUNT; i++) {
-        if (stats->string_wlength_hist[i] > 0) {
-            distinct_wlength_buckets++;
-        }
-    }
-    if (stats->string_wlength_other > 0) {
-        distinct_wlength_buckets++;
-    }
+    bool short_probe_seen = stats->string_wlength_hist[USB_FP_WLENGTH_2] > 0;
+    bool full_reread_seen = stats->string_wlength_other > 0;
 
-    /* Windows: re-requests the same string descriptor at several wLengths
-     * and also fetches the BOS descriptor. */
-    if (stats->bos_requested && distinct_wlength_buckets > 1) {
-        return ZMK_OS_WINDOWS;
-    }
-
-    /* Linux: fetches each string descriptor once with the full 255-byte
-     * buffer, and typically skips BOS. */
-    if (stats->string_wlength_hist[USB_FP_WLENGTH_255] > 0 && distinct_wlength_buckets == 1 &&
+    /* Linux (UNVERIFIED): fetches each string descriptor once with the full
+     * 255-byte buffer (no short header probe first), and skips BOS. */
+    if (stats->string_wlength_hist[USB_FP_WLENGTH_255] > 0 && !short_probe_seen &&
         !stats->bos_requested) {
         return ZMK_OS_LINUX;
     }
 
-    /* macOS/iOS: mixes in short-wLength descriptor header probes; treated
-     * as the fallback for any other observed pattern. */
-    if (distinct_wlength_buckets > 0 || stats->bos_requested) {
+    /* macOS (VERIFIED, 2026-07-05 real capture): every descriptor - device,
+     * each string, configuration - is read as a short 2-byte header probe
+     * followed by a full-length re-read, and BOS is requested exactly once
+     * at its minimal/standard length (sizeof(struct usb_bos_descriptor) ==
+     * 5), never re-requested larger. */
+    if (short_probe_seen && full_reread_seen && stats->bos_requested && stats->bos_wlength <= 5) {
+        return ZMK_OS_MACOS;
+    }
+
+    /* Windows (UNVERIFIED): distinguished from the verified macOS signature
+     * above by fetching BOS with more than just the minimal header, i.e.
+     * following up on capability descriptors macOS didn't ask for. */
+    if (stats->bos_requested && stats->bos_wlength > 5) {
+        return ZMK_OS_WINDOWS;
+    }
+
+    /* Fallback: some descriptor re-read or BOS activity happened but didn't
+     * match a signature above cleanly - closest to the one verified pattern. */
+    if (short_probe_seen || full_reread_seen || stats->bos_requested) {
         return ZMK_OS_MACOS;
     }
 
@@ -77,6 +81,10 @@ static void reset_usb_fp_stats(void) { memset(&stats, 0, sizeof(stats)); }
  * CONFIG_ZMK_OS_DETECTION_TEST_INJECT shim) for every standard USB SETUP
  * packet. Observation only - never changes what's returned to the host. */
 void zmk_os_detection_observe_setup(const struct usb_setup_packet *setup) {
+    LOG_DBG("os detection: SETUP bmRequestType=0x%02x bRequest=0x%02x wValue=0x%04x "
+            "wIndex=0x%04x wLength=%u",
+            setup->bmRequestType, setup->bRequest, setup->wValue, setup->wIndex, setup->wLength);
+
     if (setup->bRequest == USB_SREQ_SET_ADDRESS) {
         /* Host (re)started enumeration; drop any previous cycle's stats. */
         reset_usb_fp_stats();
@@ -141,12 +149,21 @@ static void inject_windows_like(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 255);
-    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 20); /* > 5: follows up beyond the header */
 }
 
+/* Matches the real capture in docs/fingerprints.md: short header probe (2
+ * bytes) then full re-read for each of 3 string descriptors, then BOS read
+ * once at exactly its minimal header length. */
 static void inject_macos_like(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 24);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 24);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 34);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
 }
 
 static void inject_linux_like(void) {

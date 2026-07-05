@@ -149,10 +149,11 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   ZMK.
 - **Split keyboards**: detection only runs on the central side, since only
   the central owns the USB/BLE host connection.
-- The classifier thresholds in this repository are unverified placeholders
+- The macOS USB signature is verified against a real capture (2026-07-05).
+  Windows and Linux USB, and all of BLE, are still unverified placeholders
   - see [docs/fingerprints.md](docs/fingerprints.md) for exactly what was
-  and wasn't possible to verify, and how to replace them with real capture
-  data.
+  and wasn't possible to verify, and how to replace the rest with real
+  capture data (including a working J-Link RTT capture recipe).
 
 ## Development
 
@@ -200,7 +201,13 @@ you can trust them:
 2. **USB**: plug into a Windows PC, a Mac, and a Linux machine in turn.
    Capture the enumeration with `usbmon` (Linux: `sudo modprobe usbmon;
    sudo cat /sys/kernel/debug/usb/usbmon/1u`), Wireshark+USBPcap (Windows),
-   or Wireshark's built-in USB capture (macOS). Compare against
+   or Wireshark's built-in USB capture (macOS) - or, if you have J-Link SWD
+   access to the board (independent of whatever host its USB-C is plugged
+   into), flash a debug build and read the module's own
+   `zmk_os_detection_observe_setup()` `LOG_DBG` output straight out of
+   target RAM; see [docs/fingerprints.md](docs/fingerprints.md)'s "RTT
+   capture recipe" for the exact commands (this is how the macOS signature
+   already in this repo was captured). Compare against
    `zmk_os_detection_current()` / the Web UI's USB card, and update the
    thresholds in `src/os_detection_usb.c` + `docs/fingerprints.md` to
    match what you actually captured.

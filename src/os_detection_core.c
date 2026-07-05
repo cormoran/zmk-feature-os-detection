@@ -209,7 +209,13 @@ ZMK_SUBSCRIPTION(os_detection_core, zmk_endpoint_changed);
 ZMK_SUBSCRIPTION(os_detection_core, zmk_ble_active_profile_changed);
 #endif
 
-/* --- Layer auto-switch --- */
+/* --- Layer auto-switch ---
+ * Off by default (CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH=n): this
+ * overlaps with https://github.com/cormoran/zmk-feature-default-layer,
+ * which is the recommended way to auto-switch a default layer per host.
+ */
+
+#if IS_ENABLED(CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH)
 
 #include <zmk/keymap.h>
 
@@ -255,3 +261,5 @@ static int os_detection_layer_listener(const zmk_event_t *eh) {
 
 ZMK_LISTENER(os_detection_layer, os_detection_layer_listener);
 ZMK_SUBSCRIPTION(os_detection_layer, zmk_os_changed);
+
+#endif /* IS_ENABLED(CONFIG_ZMK_OS_DETECTION_LAYER_AUTO_SWITCH) */

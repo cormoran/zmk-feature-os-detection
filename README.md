@@ -149,11 +149,11 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   ZMK.
 - **Split keyboards**: detection only runs on the central side, since only
   the central owns the USB/BLE host connection.
-- The macOS and Windows USB signatures are verified against real captures
-  (2026-07-05). Linux USB, and all of BLE, are still unverified placeholders
-  - see [docs/fingerprints.md](docs/fingerprints.md) for exactly what was
-  and wasn't possible to verify, and how to replace the rest with real
-  capture data (including a working J-Link RTT capture recipe).
+- USB detection is verified against real captures for all three target OSes
+  (macOS, Windows, Linux — 2026-07-05). All of BLE is still an unverified
+  placeholder - see [docs/fingerprints.md](docs/fingerprints.md) for exactly
+  what was captured, what's still a guess, and how to update either with
+  new real capture data (including a working J-Link RTT capture recipe).
 
 ## Development
 
@@ -198,19 +198,21 @@ you can trust them:
 
 1. Flash a board with `CONFIG_ZMK_OS_DETECTION_USB=y` (and `_BLE=y` if
    testing BLE) enabled.
-2. **USB**: plug into a Windows PC, a Mac, and a Linux machine in turn.
-   Capture the enumeration with `usbmon` (Linux: `sudo modprobe usbmon;
-   sudo cat /sys/kernel/debug/usb/usbmon/1u`), Wireshark+USBPcap (Windows),
-   or Wireshark's built-in USB capture (macOS) - or, if you have J-Link SWD
-   access to the board (independent of whatever host its USB-C is plugged
-   into), flash a debug build and read the module's own
+2. **USB**: already verified against a real Mac, a real Windows PC, and a
+   real Linux machine (see [docs/fingerprints.md](docs/fingerprints.md)).
+   If you want to re-verify against a different OS version, plug into that
+   host and capture the enumeration with `usbmon` (Linux: `sudo modprobe
+   usbmon; sudo cat /sys/kernel/debug/usb/usbmon/1u`), Wireshark+USBPcap
+   (Windows), or Wireshark's built-in USB capture (macOS) - or, if you have
+   J-Link SWD access to the board (independent of whatever host its USB-C
+   is plugged into), flash a debug build and read the module's own
    `zmk_os_detection_observe_setup()` `LOG_DBG` output straight out of
    target RAM; see [docs/fingerprints.md](docs/fingerprints.md)'s "RTT
-   capture recipe" for the exact commands (this is how the macOS signature
-   already in this repo was captured). Compare against
-   `zmk_os_detection_current()` / the Web UI's USB card, and update the
-   thresholds in `src/os_detection_usb.c` + `docs/fingerprints.md` to
-   match what you actually captured.
+   capture recipe" for the exact commands (this is how the existing
+   signatures were captured). Compare against `zmk_os_detection_current()`
+   / the Web UI's USB card, and update the thresholds in
+   `src/os_detection_usb.c` + `docs/fingerprints.md` to match what you
+   actually captured.
 3. **BLE**: pair the same board with a Windows PC, a Mac, an iPhone, and a
    Linux desktop. Check the Web UI's BLE profile table for each; use
    `btmon` (Linux) or `PacketLogger` (macOS) to see the actual GATT access

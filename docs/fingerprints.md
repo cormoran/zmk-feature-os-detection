@@ -79,10 +79,13 @@ might see a second, longer BOS read even from macOS.
 
 This directly disproved part of the original placeholder heuristic: BOS
 being requested was assumed to be a Windows-only signal, but real macOS
-requests it too. `zmk_os_classify_usb()` and `inject_macos_like()` in
-`src/os_detection_usb.c` were updated to match this verified data — macOS is
-now recognized by short-probe-then-full-reread on strings **and** a
-minimal-length-only BOS read (`bos_wlength <= 5`).
+requests it too (see the real Linux capture further down: Linux does as
+well, at the same minimal length — BOS-requested-or-not turned out not to
+discriminate macOS from Linux at all once both were captured).
+`zmk_os_classify_usb()` and `inject_macos_like()` in `src/os_detection_usb.c`
+were updated to match this verified data — macOS is now recognized by the
+short-probe-then-full-reread pattern on every descriptor, independent of
+BOS.
 
 ### Real Windows capture (2026-07-05, verified)
 
@@ -118,6 +121,56 @@ recorded here as additional real, verified signals **not yet wired into the
 classifier** (current logic only inspects string reads and BOS length) -
 worth adding if the BOS-only signal ever proves too coarse against a wider
 range of real Windows/macOS versions.
+
+### Real Linux capture (2026-07-05, verified)
+
+**Method**: identical recipe again, board's USB-C moved to a real Linux
+machine.
+
+Raw sequence captured, cold boot to just after `SET_CONFIGURATION`:
+
+```
+GET_DESCRIPTOR(DEVICE)                          wLength=64  (partial probe - same as Windows, not macOS's 8)
+GET_DESCRIPTOR(DEVICE)                          wLength=18  (full)
+GET_DESCRIPTOR(BOS)                             wLength=5   (minimal header, same as macOS - not a discriminating signal)
+GET_DESCRIPTOR(DEVICE_QUALIFIER)                wLength=10  (repeated 3x identically - this device has no qualifier, so the kernel retries)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=9   (header probe, same pattern as macOS)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=34  (full)
+GET_DESCRIPTOR(STRING, index=0)                 wLength=255 (the language-ID list itself, not just indexed strings)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(STRING, index=1, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=255
+SET_CONFIGURATION(1)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=255 (re-read after SET_CONFIGURATION, likely the HID subsystem re-fetching the serial number)
+GET_DESCRIPTOR(REPORT, interface recipient)     wLength=77  (HID class request, expected post-enumeration)
+```
+
+This is the capture that actually broke the classifier as it stood after
+the Windows capture: the "macOS requests BOS at its minimal length"
+signal (`bos_wlength <= 5`) is equally true of Linux, so BOS-requested
+status doesn't discriminate the two at all — every real macOS *and* real
+Linux capture so far has requested BOS once at exactly 5 bytes. Without a
+Linux capture this collision was invisible; the previous revision's
+`zmk_os_classify_usb()` would have misclassified this exact real trace as
+macOS (falling through to the "BOS activity but no clear string pattern"
+fallback branch, which returned macOS unconditionally).
+
+Fixed by dropping the BOS check from both the macOS and Linux branches
+entirely and discriminating purely on how *string* descriptors are read
+(the only signal that actually differed): macOS does the short-probe-then-
+full-reread two-phase pattern on every string, Linux reads every string
+(including index 0, the language-ID list) directly at the full 255-byte
+buffer with no header probe. The unconditional macOS fallback was removed
+too — an unrecognized pattern now correctly returns `ZMK_OS_UNKNOWN` rather
+than guessing macOS. `inject_linux_like()` was updated to replay this real
+sequence. The `DEVICE_QUALIFIER`-retried-3-times behavior is a real,
+distinctive Linux-only signal (neither macOS nor Windows requested it at
+all) that isn't wired into the classifier yet — worth adding if the
+string-pattern signal ever proves ambiguous.
+
+**USB fingerprinting is now verified for all three target OSes** (macOS,
+Windows, Linux). Remaining USB caveats are about generalization, not "no
+data at all" - see "Known fragility" below.
 
 ### RTT capture recipe (for the next real-hardware session)
 
@@ -156,21 +209,19 @@ Control Block not found". Worked around by reading RTT directly with
    the interesting USB lines).
 
 This module's own debug log line for every SETUP packet (`os_detection_usb.c`,
-gated at `LOG_DBG`) plus this recipe is the fastest way to capture real
-Linux data too — plug the board into a real Linux machine (any Linux box
-works for this, not just the sandbox), connect J-Link's SWD pins to any
-Linux machine (SWD is independent of the target's own USB connection), and
-repeat.
+gated at `LOG_DBG`) plus this recipe is what captured all three real traces
+above.
 
 ### Still unverified
 
-Only Linux has no real capture yet — the Linux heuristic in
-`zmk_os_classify_usb()` remains a placeholder per the original task brief's
-stated tendency (single full 255-byte string read, no BOS), not yet
-confirmed or refuted by real data. **Replace it the same way once real
-Linux hardware is available**: `CONFIG_ZMK_OS_DETECTION_TEST_INJECT` lets
-any updated threshold be regression-tested with `tests/os_detection_usb`
-alone, no hardware required for the re-verification step.
+USB is now verified for all three target OSes. Only **BLE** remains
+entirely unverified (see below) — and even for USB, treat "verified" as
+"verified against one specific version of one specific OS on 2026-07-05",
+not "guaranteed for every version forever". `CONFIG_ZMK_OS_DETECTION_TEST_INJECT`
+lets any future threshold change be regression-tested with
+`tests/os_detection_usb` alone, no hardware required for the
+re-verification step, if a different OS version's real behavior turns out
+to differ from what's captured here.
 
 Known fragility (see README "Known limitations" for the full list): the
 wLength pattern is OS-version-dependent, ChromeOS enumerates like Linux, and

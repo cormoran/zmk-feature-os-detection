@@ -149,8 +149,8 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   ZMK.
 - **Split keyboards**: detection only runs on the central side, since only
   the central owns the USB/BLE host connection.
-- The macOS USB signature is verified against a real capture (2026-07-05).
-  Windows and Linux USB, and all of BLE, are still unverified placeholders
+- The macOS and Windows USB signatures are verified against real captures
+  (2026-07-05). Linux USB, and all of BLE, are still unverified placeholders
   - see [docs/fingerprints.md](docs/fingerprints.md) for exactly what was
   and wasn't possible to verify, and how to replace the rest with real
   capture data (including a working J-Link RTT capture recipe).

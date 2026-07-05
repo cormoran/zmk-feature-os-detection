@@ -82,9 +82,42 @@ being requested was assumed to be a Windows-only signal, but real macOS
 requests it too. `zmk_os_classify_usb()` and `inject_macos_like()` in
 `src/os_detection_usb.c` were updated to match this verified data — macOS is
 now recognized by short-probe-then-full-reread on strings **and** a
-minimal-length-only BOS read (`bos_wlength <= 5`), with Windows tentatively
-distinguished by requesting BOS at more than the minimal length (still an
-unverified guess, since no real Windows capture exists yet).
+minimal-length-only BOS read (`bos_wlength <= 5`).
+
+### Real Windows capture (2026-07-05, verified)
+
+**Method**: identical to the macOS capture above — same debug build, same
+RTT-read recipe — except the board's USB-C was moved to a real Windows PC.
+
+Raw sequence captured (repeated identically 3 times in a row in the
+captured log, suggesting the host re-enumerated/retried multiple times;
+shown once here):
+
+```
+GET_DESCRIPTOR(DEVICE)        wLength=64   (partial probe - not macOS's 8)
+GET_DESCRIPTOR(DEVICE)        wLength=18   (full)
+GET_DESCRIPTOR(CONFIGURATION) wLength=255  (straight to max length, no short header probe first)
+GET_DESCRIPTOR(BOS)           wLength=255  (straight to max length, no short header probe first)
+```
+
+Notably: **no string descriptors were requested at all** (no manufacturer/
+product/serial string reads), unlike macOS's three. Both configuration and
+BOS were fetched directly at `wLength=255` with no short-probe-then-full
+two-phase pattern — the opposite of macOS's behavior for those same
+descriptors. Device descriptor was probed at `wLength=64` first (macOS used
+8).
+
+This confirmed the "Windows requests BOS at more than the minimal header
+length" guess from the previous (pre-Windows-capture) revision of this
+file was directionally correct, so `zmk_os_classify_usb()`'s Windows branch
+(`bos_requested && bos_wlength > 5`) needed no logic change — only
+`inject_windows_like()` in `src/os_detection_usb.c` was updated to replay
+this real sequence instead of the old guessed one. The device-descriptor
+probe length (64 vs macOS's 8) and the direct-to-255 configuration read are
+recorded here as additional real, verified signals **not yet wired into the
+classifier** (current logic only inspects string reads and BOS length) -
+worth adding if the BOS-only signal ever proves too coarse against a wider
+range of real Windows/macOS versions.
 
 ### RTT capture recipe (for the next real-hardware session)
 
@@ -124,18 +157,19 @@ Control Block not found". Worked around by reading RTT directly with
 
 This module's own debug log line for every SETUP packet (`os_detection_usb.c`,
 gated at `LOG_DBG`) plus this recipe is the fastest way to capture real
-Windows/Linux data too — plug the board into that OS's real host, connect
-J-Link's SWD pins to any Linux machine (SWD is independent of the target's
-own USB connection), and repeat.
+Linux data too — plug the board into a real Linux machine (any Linux box
+works for this, not just the sandbox), connect J-Link's SWD pins to any
+Linux machine (SWD is independent of the target's own USB connection), and
+repeat.
 
 ### Still unverified
 
-Windows and Linux still have no real capture — the heuristics in
-`zmk_os_classify_usb()` for those two remain placeholders per the original
-task brief's stated tendencies, now reframed to not collide with the
-verified macOS signature above. **Replace them the same way once real
-Windows/Linux hardware is available**: `CONFIG_ZMK_OS_DETECTION_TEST_INJECT`
-lets any updated thresholds be regression-tested with `tests/os_detection_usb`
+Only Linux has no real capture yet — the Linux heuristic in
+`zmk_os_classify_usb()` remains a placeholder per the original task brief's
+stated tendency (single full 255-byte string read, no BOS), not yet
+confirmed or refuted by real data. **Replace it the same way once real
+Linux hardware is available**: `CONFIG_ZMK_OS_DETECTION_TEST_INJECT` lets
+any updated threshold be regression-tested with `tests/os_detection_usb`
 alone, no hardware required for the re-verification step.
 
 Known fragility (see README "Known limitations" for the full list): the

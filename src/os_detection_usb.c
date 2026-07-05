@@ -18,12 +18,12 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
-/* macOS branch below is a VERIFIED signature (real capture on this
- * workspace's rig against an actual Mac, see docs/fingerprints.md). Windows
- * and Linux are still UNVERIFIED placeholders - no real Windows/Linux
- * capture has been possible yet. Replace them once real captures exist -
- * CONFIG_ZMK_OS_DETECTION_TEST_INJECT lets that be done with a unit test
- * alone, no hardware required. */
+/* macOS and Windows branches below are VERIFIED signatures (real captures on
+ * this workspace's rig against an actual Mac and an actual Windows PC, see
+ * docs/fingerprints.md). Linux is still an UNVERIFIED placeholder - no real
+ * Linux capture has been possible yet. Replace it once a real capture
+ * exists - CONFIG_ZMK_OS_DETECTION_TEST_INJECT lets that be done with a
+ * unit test alone, no hardware required. */
 enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
     if (stats->string_request_count == 0 && !stats->bos_requested) {
         return ZMK_OS_UNKNOWN;
@@ -48,9 +48,12 @@ enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
         return ZMK_OS_MACOS;
     }
 
-    /* Windows (UNVERIFIED): distinguished from the verified macOS signature
-     * above by fetching BOS with more than just the minimal header, i.e.
-     * following up on capability descriptors macOS didn't ask for. */
+    /* Windows (VERIFIED, 2026-07-05 real capture): no string descriptors
+     * requested at all; device descriptor probed at wLength=64 (not macOS's
+     * 8), then configuration and BOS both fetched directly at wLength=255
+     * with no short header probe first. Only the BOS-length signal is
+     * checked here since it alone disambiguates from the verified macOS
+     * pattern above. */
     if (stats->bos_requested && stats->bos_wlength > 5) {
         return ZMK_OS_WINDOWS;
     }
@@ -145,11 +148,19 @@ static void inject_setup(uint8_t bRequest, uint8_t descriptor_type, uint16_t wLe
     zmk_os_detection_observe_setup(&setup);
 }
 
+/* Matches the real capture in docs/fingerprints.md: no string descriptors
+ * at all, device descriptor probed at wLength=64 (not macOS's 8) then the
+ * full 18, and both configuration and BOS fetched directly at wLength=255
+ * (no short header probe first, unlike macOS). Only the BOS wLength is used
+ * for classification today; the device-descriptor probe length and the
+ * configuration-descriptor request are recorded here for fidelity/future
+ * use but aren't tracked signals yet. */
 static void inject_windows_like(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
-    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 2);
-    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 255);
-    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 20); /* > 5: follows up beyond the header */
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 64);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 18);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 255);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 255);
 }
 
 /* Matches the real capture in docs/fingerprints.md: short header probe (2

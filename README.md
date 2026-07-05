@@ -146,6 +146,17 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
 
 ## Known limitations
 
+- **Fixed 2026-07-05: enabling `CONFIG_ZMK_OS_DETECTION_USB` used to break
+  Windows enumeration entirely.** Selecting `CONFIG_USB_DEVICE_BOS` bumped
+  `bcdUSB` to 2.01 without this module ever registering a valid BOS
+  capability, so the device answered `GET_DESCRIPTOR(BOS)` with a
+  spec-invalid, zero-length descriptor — real Windows aborted enumeration
+  on it (retried 3 times, never showed up as a keyboard), while Linux/macOS
+  tolerated it and worked fine. If you're on a version older than this fix,
+  update. See [docs/fingerprints.md](docs/fingerprints.md)'s "Windows
+  enumeration failure discovered and fixed" section and
+  [docs/windows-usb-enumeration-issue.md](docs/windows-usb-enumeration-issue.md)
+  for the full root-cause writeup.
 - **USB fingerprints are OS-version-dependent.** The `wLength` pattern a
   given Windows/macOS/Linux version requests can change between OS
   releases; treat the classifier as a best-effort guess, not a guarantee.

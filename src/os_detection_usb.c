@@ -9,6 +9,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include <zephyr/usb/usb_device.h>
+#include <zephyr/usb/bos.h>
 #include <zephyr/logging/log.h>
 
 #include <zmk/event_manager.h>
@@ -18,15 +19,63 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+/* CONFIG_USB_DEVICE_BOS (selected by this module, see Kconfig) bumps the
+ * device descriptor's bcdUSB from 2.00 to 2.01 (usb_descriptor.c), which is
+ * exactly what makes a host request GET_DESCRIPTOR(BOS) at all - the signal
+ * this module's Windows/macOS/Linux split depends on. But Zephyr's BOS
+ * header (bos.c) starts with wTotalLength=0/bNumDeviceCaps=0 and is only
+ * ever corrected by usb_bos_register_cap(), which nothing in ZMK or this
+ * module called before this fix - so the device answered BOS reads with a
+ * spec-invalid empty descriptor (wTotalLength=0, below its own 5-byte
+ * header size). Real-hardware testing found Windows aborts enumeration
+ * after reading that broken BOS (3 retries, never reaches
+ * SET_CONFIGURATION - see docs/windows-usb-enumeration-issue.md), while
+ * Linux/macOS tolerate it. Registering the standard, always-truthful "no
+ * LPM support" USB 2.0 Extension capability (bmAttributes=0, same as
+ * Zephyr's own webusb sample) makes the BOS response spec-valid without
+ * claiming any capability this stack doesn't actually have. Must run
+ * before zmk_usb_init()'s usb_enable() (SYS_INIT APPLICATION/
+ * CONFIG_ZMK_USB_INIT_PRIORITY in zmk/app/src/usb.c) - POST_KERNEL always
+ * precedes APPLICATION regardless of priority number, so that's used here
+ * rather than racing on priority numbers. */
+USB_DEVICE_BOS_DESC_DEFINE_CAP struct usb_bos_capability_lpm bos_cap_lpm = {
+    .bLength = sizeof(struct usb_bos_capability_lpm),
+    .bDescriptorType = USB_DESC_DEVICE_CAPABILITY,
+    .bDevCapabilityType = USB_BOS_CAPABILITY_EXTENSION,
+    .bmAttributes = 0,
+};
+
+static int os_detection_usb_bos_init(void) {
+    usb_bos_register_cap((void *)&bos_cap_lpm);
+    return 0;
+}
+
+SYS_INIT(os_detection_usb_bos_init, POST_KERNEL, 0);
+
 /* All branches below are VERIFIED signatures (real captures on this
  * workspace's rig against an actual Mac, an actual Windows PC, an actual
- * Linux machine, and an actual iPhone - see docs/fingerprints.md). Note BOS
- * being requested does NOT discriminate macOS/iOS from Linux - all three
- * request it once at its minimal header length; only Windows fetches it at
- * more than that. The macOS/iOS-vs-Linux split instead comes from how
- * *string* descriptors are read: macOS/iOS do a short 2-byte header probe
- * then a full re-read for each one, Linux reads each one directly at the
- * full 255-byte buffer with no header probe. */
+ * Linux machine, and an actual iPhone - see docs/fingerprints.md).
+ *
+ * IMPORTANT HISTORY (2026-07-05, second pass): the *original* "real Windows
+ * capture" this classifier was first built from was actually a capture of
+ * Windows *failing* to enumerate the device at all - see
+ * docs/windows-usb-enumeration-issue.md. Before the os_detection_usb_bos_init()
+ * fix above, this module's BOS response was spec-invalid
+ * (wTotalLength=0, below its own 5-byte header size), which made Windows
+ * abort enumeration right after reading it (retried 3x, never reached
+ * SET_CONFIGURATION, never read a single string descriptor - all consistent
+ * with a failed enumeration, not a real "Windows doesn't read strings"
+ * signal). Once the BOS response became spec-valid, a fresh real Windows
+ * capture showed it reads strings (at wLength=255) exactly like Linux does -
+ * so "no string descriptors" is retired as a Windows signal entirely. What
+ * still discriminates a real, successfully-enumerating Windows from real
+ * Linux is how *BOS itself* is read: Linux does the spec-correct two-step
+ * dance (5-byte header probe, then a second read at the wTotalLength that
+ * header just advertised - 12, once this module's one registered
+ * capability is included), matching how it already treats every other
+ * multi-byte descriptor; Windows instead reads BOS directly at wLength=255
+ * in one blind shot, ignoring what the header said. This one BOS-request
+ * pattern needed to move ahead of the Linux string-based check below. */
 enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
     if (stats->string_request_count == 0 && !stats->bos_requested) {
         return ZMK_OS_UNKNOWN;
@@ -37,35 +86,44 @@ enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
 
     /* macOS/iOS (VERIFIED, 2026-07-05 real captures): every descriptor -
      * device, each string, configuration - is read as a short 2-byte
-     * header probe followed by a full-length re-read. BOS is requested
-     * once at its minimal/standard length (sizeof(struct
-     * usb_bos_descriptor) == 5), same as Linux, so it isn't used to
-     * distinguish those two here. macOS and iOS share this exact
-     * descriptor-read pattern; the only observed difference is that iOS
-     * sends SET_FEATURE(DEVICE_REMOTE_WAKEUP) after enumerating and real
-     * macOS didn't. */
+     * header probe followed by a full-length re-read. This is independent
+     * of the BOS fix above (macOS/iOS are dispatched purely on string
+     * shape, before either OS-specific BOS/Linux check below is reached),
+     * so it hasn't been re-verified against the now-spec-valid BOS - not
+     * expected to matter, since neither branch here inspects
+     * stats->bos_wlength. macOS and iOS share this exact descriptor-read
+     * pattern; the only observed difference is that iOS sends
+     * SET_FEATURE(DEVICE_REMOTE_WAKEUP) after enumerating and real macOS
+     * didn't. */
     if (short_probe_seen && full_reread_seen) {
         return stats->remote_wakeup_enabled ? ZMK_OS_IOS : ZMK_OS_MACOS;
     }
 
-    /* Linux (VERIFIED, 2026-07-05 real capture): fetches every string
-     * descriptor (including index 0, the language-ID list) directly at the
-     * full 255-byte buffer, with no short header probe first. Also
-     * requests BOS once at its minimal length (like macOS), and - not yet
-     * tracked as a signal here - retries DEVICE_QUALIFIER (descriptor type
-     * 0x06) three times, which neither macOS nor Windows did at all. */
-    if (stats->string_wlength_hist[USB_FP_WLENGTH_255] > 0 && !short_probe_seen) {
-        return ZMK_OS_LINUX;
+    /* Windows (RE-VERIFIED 2026-07-05, after the BOS fix above): reads BOS
+     * directly at wLength=255 in one blind shot - never the 5-byte header
+     * probe Linux (below) now does first. Checked before the Linux rule
+     * because Windows' string-descriptor shape is otherwise
+     * indistinguishable from Linux's post-fix (see the fingerprints.md
+     * writeup for the exact byte sequence). Also observed but not yet
+     * tracked as a signal: CONFIGURATION read directly at wLength=255
+     * (Linux does a 9-then-34 two-step there too) and DEVICE_QUALIFIER
+     * requested only once (Linux retries it 3x) - worth adding if the
+     * BOS-length signal ever proves too coarse against a wider range of
+     * real Windows versions. */
+    if (stats->bos_requested && stats->bos_wlength == 255) {
+        return ZMK_OS_WINDOWS;
     }
 
-    /* Windows (VERIFIED, 2026-07-05 real capture): no string descriptors
-     * requested at all; device descriptor probed at wLength=64 (not macOS's
-     * 8), then configuration and BOS both fetched directly at wLength=255
-     * with no short header probe first. Only the BOS-length signal is
-     * checked here since it alone disambiguates from the verified macOS/
-     * Linux minimal-BOS pattern above. */
-    if (stats->bos_requested && stats->bos_wlength > 5) {
-        return ZMK_OS_WINDOWS;
+    /* Linux (RE-VERIFIED 2026-07-05, after the BOS fix above): fetches
+     * every string descriptor (including index 0, the language-ID list)
+     * directly at the full 255-byte buffer, with no short header probe
+     * first - unchanged from before the fix. Also requests BOS as a
+     * genuine two-step read (5-byte header, then 12 bytes - the
+     * wTotalLength that header now correctly advertises), and - not yet
+     * tracked as a signal here - retries DEVICE_QUALIFIER (descriptor type
+     * 0x06) three times, which real Windows did not do post-fix. */
+    if (stats->string_wlength_hist[USB_FP_WLENGTH_255] > 0 && !short_probe_seen) {
+        return ZMK_OS_LINUX;
     }
 
     return ZMK_OS_UNKNOWN;
@@ -168,19 +226,31 @@ static void inject_set_feature_remote_wakeup(void) {
     zmk_os_detection_observe_setup(&setup);
 }
 
-/* Matches the real capture in docs/fingerprints.md: no string descriptors
- * at all, device descriptor probed at wLength=64 (not macOS's 8) then the
- * full 18, and both configuration and BOS fetched directly at wLength=255
- * (no short header probe first, unlike macOS). Only the BOS wLength is used
- * for classification today; the device-descriptor probe length and the
- * configuration-descriptor request are recorded here for fidelity/future
- * use but aren't tracked signals yet. */
+/* Matches the *second*, re-verified real Windows capture in
+ * docs/fingerprints.md (2026-07-05, after the os_detection_usb_bos_init()
+ * fix above) - not the module's original Windows capture, which turned out
+ * to be Windows failing to enumerate at all against this module's old
+ * spec-invalid BOS response (see docs/windows-usb-enumeration-issue.md).
+ * With a valid BOS, real Windows now enumerates successfully and *does*
+ * request string descriptors (directly at wLength=255, indistinguishable
+ * by itself from Linux) - the only signal that still discriminates it from
+ * Linux is BOS itself being fetched directly at wLength=255 in one blind
+ * shot, vs. Linux's genuine two-step header-then-advertised-length read
+ * (see inject_linux_like()). Device descriptor probed at wLength=64 (not
+ * macOS's 8), configuration fetched directly at wLength=255 (like BOS,
+ * unlike Linux's two-step), and DEVICE_QUALIFIER requested only once
+ * (Linux retries it 3x) are recorded here for fidelity/future use but
+ * aren't tracked signals yet. */
 static void inject_windows_like(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 64);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 18);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 255);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 255);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 255);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 255);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_STRING, 255);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE_QUALIFIER, 10);
 }
 
 /* Matches the real capture in docs/fingerprints.md: short header probe (2
@@ -218,18 +288,28 @@ static void inject_ios_like(void) {
     inject_set_feature_remote_wakeup();
 }
 
-/* Matches the real capture in docs/fingerprints.md: device descriptor
- * probed at wLength=64 (same as Windows, not macOS's 8), a single minimal
- * BOS read (same length as macOS - not a discriminating signal),
- * DEVICE_QUALIFIER retried 3 times (not tracked as a signal, included for
- * fidelity), configuration read as header-then-full like macOS, and every
- * string descriptor (including index 0, the language-ID list) read
- * directly at the full 255-byte buffer with no short probe first. */
+/* Matches the *second*, re-verified real Linux capture in
+ * docs/fingerprints.md (2026-07-05, after the os_detection_usb_bos_init()
+ * fix above, captured from this workspace's own sandbox host - a real
+ * Linux kernel): device descriptor probed at wLength=64 (same as Windows,
+ * not macOS's 8); BOS now read as a genuine two-step header-then-full
+ * dance (5-byte header probe, then 12 bytes - the wTotalLength that header
+ * now correctly advertises once this module registers one BOS
+ * capability), unlike the single pre-fix 5-byte read this scenario used to
+ * inject - this final 12-byte read is what the classifier actually keys
+ * off (Windows' single-shot 255-byte read never matches it); DEVICE_QUALIFIER
+ * retried 3 times (not tracked as a signal, included for fidelity, and the
+ * one place real Windows still differs - it doesn't retry at all);
+ * configuration read as header-then-full like macOS; every string
+ * descriptor (including index 0, the language-ID list) read directly at
+ * the full 255-byte buffer with no short probe first - unchanged from
+ * before the fix. */
 static void inject_linux_like(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 64);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 18);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 12);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE_QUALIFIER, 10);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE_QUALIFIER, 10);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE_QUALIFIER, 10);

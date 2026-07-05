@@ -87,7 +87,20 @@ were updated to match this verified data — macOS is now recognized by the
 short-probe-then-full-reread pattern on every descriptor, independent of
 BOS.
 
-### Real Windows capture (2026-07-05, verified)
+### Real Windows capture (2026-07-05, verified — but see the correction below)
+
+**⚠️ CORRECTION (2026-07-05, second session)**: this capture, and the
+"verified" conclusion below it, described what turned out to be **Windows
+failing to enumerate the device at all**, not real Windows USB-stack
+behavior. Left in place for the historical record; see "Windows
+enumeration failure discovered and fixed" further down for the root cause,
+the fix, and a fresh, actually-successful real Windows capture that
+replaces this one as the classifier's basis. Notably the tell was already
+visible in this section before anyone acted on it: "repeated identically 3
+times", never reaching `SET_CONFIGURATION`, and zero string-descriptor
+reads (every other real capture in this file, including the fixed Windows
+capture below, reads at least a few) — all symptoms of a host retrying and
+giving up on a bad descriptor, not a legitimate enumeration.
 
 **Method**: identical to the macOS capture above — same debug build, same
 RTT-read recipe — except the board's USB-C was moved to a real Windows PC.
@@ -122,7 +135,107 @@ classifier** (current logic only inspects string reads and BOS length) -
 worth adding if the BOS-only signal ever proves too coarse against a wider
 range of real Windows/macOS versions.
 
-### Real Linux capture (2026-07-05, verified)
+### Windows enumeration failure discovered and fixed (2026-07-05, second session)
+
+The module's owner reported that a board running this module's USB OS
+detection stopped being recognized by Windows at all. Investigation (see
+`docs/windows-usb-enumeration-issue.md` for the full write-up) found the
+root cause in this module itself, not in the classifier: enabling
+`CONFIG_ZMK_OS_DETECTION_USB` selects `CONFIG_USB_DEVICE_BOS`, which bumps
+the device descriptor's `bcdUSB` to `0x0201` — exactly what makes a host
+request `GET_DESCRIPTOR(BOS)` in the first place, the signal this module's
+classifier depends on. But Zephyr's legacy USB stack initializes its BOS
+header with `wTotalLength=0` and only ever corrects it via
+`usb_bos_register_cap()`, which nothing in ZMK or this module called. So
+the device answered every BOS read with a spec-invalid 5-byte descriptor
+claiming `wTotalLength=0` (below its own header size) — and real Windows
+aborted enumeration right after reading it, retrying 3 times before giving
+up (matching the "Real Windows capture" above exactly). Linux and macOS
+tolerated the malformed BOS and enumerated fine regardless, which is why
+this went unnoticed until a user actually plugged into Windows.
+
+**Fix**: `src/os_detection_usb.c` now registers a standard, always-truthful
+USB 2.0 Extension BOS capability (`bmAttributes=0` — no LPM support
+claimed, matching Zephyr's own `samples/subsys/usb/webusb`) via a
+`SYS_INIT(..., POST_KERNEL, 0)` hook, guaranteed to run before ZMK's own
+`usb_enable()` (`SYS_INIT(..., APPLICATION, CONFIG_ZMK_USB_INIT_PRIORITY)`
+in `zmk/app/src/usb.c`) since `POST_KERNEL` always precedes `APPLICATION`
+regardless of priority number. This makes the BOS response spec-valid
+(`wTotalLength=12`, `bNumDeviceCaps=1`) without claiming any capability the
+stack doesn't actually have.
+
+**Verification, both directly on real hardware**:
+
+- Read the raw BOS descriptor via a `pyusb` control transfer from this
+  workspace's own sandbox host (a real Linux USB host, one of the two test
+  boards was already plugged into it) before and after the fix:
+  `05 0f 00 00 00` (`wTotalLength=0`, invalid) →
+  `05 0f 0c 00 01 07 10 02 00 00 00 00` (`wTotalLength=12`,
+  `bNumDeviceCaps=1`, valid).
+- Flashed the fixed firmware to the other test board while its USB-C was
+  plugged into a real Windows PC (SWD/RTT stayed on this sandbox
+  throughout — see hardware-rig.md for why that's possible) and read the
+  RTT debug log of every SETUP packet. Windows now reaches
+  `SET_CONFIGURATION` and reads the HID `REPORT` descriptor
+  (`wLength=141`) — neither ever happened in the original broken capture
+  above — meaning the device now actually functions as a keyboard on
+  Windows, not just "gets fingerprinted correctly".
+
+Raw fixed-Windows sequence (RTT capture, same rig, same debug build style
+as every other capture in this file):
+
+```
+GET_DESCRIPTOR(DEVICE)                          wLength=64   (partial probe - not macOS's 8)
+GET_DESCRIPTOR(DEVICE)                          wLength=18   (full)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=255  (straight to max length, no short header probe first)
+GET_DESCRIPTOR(BOS)                             wLength=255  (straight to max length, no short header probe first - still true post-fix)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(STRING, index=0)                 wLength=255  (the language-ID list itself)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(DEVICE_QUALIFIER)                wLength=10   (requested once - Linux, below, retries this 3x)
+SET_CONFIGURATION(1)
+GET_DESCRIPTOR(REPORT, interface recipient)     wLength=141  (HID class request, expected post-enumeration)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=2050 (post-enum re-read, unusually large buffer - plausibly Device Manager/driver display doing its own pass)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=2050 (same)
+```
+
+**This retires "no string descriptors" as a Windows signal entirely** — it
+was never a real Windows behavior, only a symptom of the enumeration
+failing before strings were ever reached. A successfully-enumerating real
+Windows reads strings directly at `wLength=255`, structurally identical to
+Linux for that signal alone. What still discriminates them, found by
+comparing this capture against a fresh post-fix Linux re-capture (next
+section): **BOS itself**. Windows reads it directly at `wLength=255` in one
+blind shot, both before and after the fix. Linux, once the BOS response
+became spec-valid, started doing the same genuine two-step
+header-then-advertised-length read it already does for every other
+multi-byte descriptor (5-byte probe, then exactly 12 bytes — the
+`wTotalLength` that header now correctly reports). `zmk_os_classify_usb()`
+was updated accordingly: the Windows check (`bos_wlength == 255`, tightened
+from the old `> 5`) now runs *before* the Linux string-based check, since a
+post-fix Windows capture would otherwise satisfy the Linux rule first.
+`inject_windows_like()`/`inject_linux_like()` in `src/os_detection_usb.c`
+were updated to replay these exact fixed-era sequences.
+
+Also newly visible in this capture but **not yet wired into the
+classifier**: configuration read directly at `wLength=255` (Linux does a
+two-step 9-then-34 there, like macOS), `DEVICE_QUALIFIER` requested only
+once (Linux retries it 3x), and the two large post-`SET_CONFIGURATION`
+string re-reads at `wLength=2050` (not seen in any other capture in this
+file at all). Worth adding if the BOS-read-shape signal ever proves too
+coarse against a wider range of real Windows versions.
+
+**Not yet re-verified**: macOS/iOS. Their branch in `zmk_os_classify_usb()`
+dispatches purely on string-descriptor shape and is checked before either
+the Windows or Linux rule, so it doesn't consult `bos_wlength` at all and
+isn't logically affected by this fix — but no fresh real Mac/iPhone capture
+against the now-valid BOS has actually been taken. `fingerprints.md`'s
+prediction from before this fix ("macOS/Linux may re-read BOS at the new
+wTotalLength once capabilities exist") appears confirmed for Linux; if a
+future session has a Mac or iPhone available, capturing it against this
+fix would close that gap.
+
+### Real Linux capture (2026-07-05, verified, pre-fix — see the re-capture below)
 
 **Method**: identical recipe again, board's USB-C moved to a real Linux
 machine.
@@ -172,6 +285,48 @@ string-pattern signal ever proves ambiguous.
 (iOS follows further down, once it turned out to actually differ from
 macOS). Remaining USB caveats are about generalization, not "no data at
 all" - see "Known fragility" below.
+
+### Real Linux re-capture (2026-07-05, second session, post-fix)
+
+**Method**: after the `os_detection_usb_bos_init()` fix described above
+("Windows enumeration failure discovered and fixed"), re-captured Linux
+directly from this workspace's own sandbox host — one of the two test
+boards happens to already be plugged into it as a real Linux USB host, so
+no board relocation was needed for this one.
+
+Raw sequence, cold boot through the post-`SET_CONFIGURATION` HID read:
+
+```
+GET_DESCRIPTOR(DEVICE)                          wLength=64  (partial probe - unchanged)
+GET_DESCRIPTOR(DEVICE)                          wLength=18  (full)
+GET_DESCRIPTOR(BOS)                             wLength=5   (header probe - NEW: this is now a genuine two-step read, not a one-shot minimal read)
+GET_DESCRIPTOR(BOS)                             wLength=12  (full - NEW: reads exactly the wTotalLength the header just advertised)
+GET_DESCRIPTOR(DEVICE_QUALIFIER)                wLength=10  (repeated 3x identically - unchanged)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=9   (header probe - unchanged)
+GET_DESCRIPTOR(CONFIGURATION)                   wLength=34  (full - unchanged)
+GET_DESCRIPTOR(STRING, index=0)                 wLength=255 (unchanged)
+GET_DESCRIPTOR(STRING, index=2, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(STRING, index=1, langid=0x0409)  wLength=255
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=255
+SET_CONFIGURATION(1)
+GET_DESCRIPTOR(STRING, index=3, langid=0x0409)  wLength=255 (re-read - unchanged)
+GET_DESCRIPTOR(REPORT, interface recipient)     wLength=77  (unchanged)
+```
+
+Confirms this file's own prediction from before the fix ("macOS/Linux may
+re-read BOS at the new wTotalLength once capabilities exist"): the kernel
+now does the same spec-correct header-then-advertised-length two-step read
+for BOS that it already did for CONFIGURATION, because the header it reads
+first now honestly says `wTotalLength=12` instead of the old `0`. Every
+other signal is byte-for-byte identical to the pre-fix Linux capture above.
+This is the capture that let `zmk_os_classify_usb()`'s Windows check be
+tightened to `bos_wlength == 255` and moved ahead of the Linux check — see
+"Windows enumeration failure discovered and fixed" above for the full
+reasoning, since it only makes sense read together with the fixed-Windows
+capture. Also directly confirmed via a raw `pyusb` control-transfer read
+from the same host (independent of RTT logging): `GET_DESCRIPTOR(BOS)`
+returns `05 0f 0c 00 01 07 10 02 00 00 00 00` — `wTotalLength=12`,
+`bNumDeviceCaps=1`, spec-valid.
 
 ### Real Android capture (2026-07-05) — confirms the documented Linux/Android ambiguity
 
@@ -325,6 +480,15 @@ wLength pattern is OS-version-dependent. USB alone still cannot distinguish
 ChromeOS from Linux (both share the kernel), but macOS and iOS **are** now
 distinguished (see the iPhone capture above) — narrower than the original
 task brief assumed, on one signal only.
+
+**2026-07-05, second session**: a real BOS-descriptor bug (this module's
+own, not a classifier heuristic — see "Windows enumeration failure
+discovered and fixed" above) was found and fixed, and Windows + Linux were
+both re-verified against the fix. **macOS and iOS have not been
+re-verified against the fix** — their classification logic doesn't consult
+the BOS length so it isn't expected to be affected, but no fresh real
+capture confirms that. If a Mac or iPhone becomes available, capturing
+against the current firmware would close that gap.
 
 ## BLE
 

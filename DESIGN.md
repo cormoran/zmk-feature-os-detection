@@ -222,6 +222,19 @@ unmodified under `ZMK_OS_DETECTION_TEST_INJECT` on native_sim.
     this hook only works with the legacy USB device stack (risk called out
     in README — breaks if ZMK ever migrates to `device_next`).
   - `zephyr_ld_options(-Wl,--wrap=usb_handle_bos)`.
+- **BOS capability registration** (`os_detection_usb_bos_init()`,
+  `SYS_INIT(..., POST_KERNEL, 0)`): `CONFIG_ZMK_OS_DETECTION_USB` selecting
+  `USB_DEVICE_BOS` bumps `bcdUSB` to 2.01, which is what makes a host
+  request `GET_DESCRIPTOR(BOS)` at all — but Zephyr's legacy stack leaves
+  the BOS header's `wTotalLength=0` until something calls
+  `usb_bos_register_cap()`. Nothing else in ZMK does, so this module
+  registers a minimal, always-truthful USB 2.0 Extension capability itself
+  (fixed 2026-07-05 — see `docs/windows-usb-enumeration-issue.md`; a
+  spec-invalid empty BOS made real Windows abort enumeration entirely).
+  Must run before ZMK's own `usb_enable()`
+  (`APPLICATION`/`CONFIG_ZMK_USB_INIT_PRIORITY`) — `POST_KERNEL` always
+  precedes `APPLICATION` regardless of priority number, so ordering doesn't
+  depend on a priority-number race.
 - Wrap function observes every SETUP packet by calling
   `zmk_os_detection_observe_setup(setup)` before delegating to
   `__real_usb_handle_bos`, fully transparent (return value unchanged).

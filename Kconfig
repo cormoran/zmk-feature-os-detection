@@ -21,6 +21,12 @@ config ZMK_OS_DETECTION_BLE
     bool "Detect host OS via BLE GATT access fingerprint"
     depends on ZMK_BLE
     select BT_GATT_AUTHORIZATION_CUSTOM
+    # The per-profile detected/override state is persisted as two array
+    # settings (see src/os_detection_settings.c), compiled whenever
+    # zmk-feature-custom-settings is present. That module gates its array
+    # support behind ZMK_CUSTOM_SETTINGS_ARRAY (default y), so force it on
+    # to keep the build working even if a keyboard disabled it to save flash.
+    select ZMK_CUSTOM_SETTINGS_ARRAY if ZMK_CUSTOM_SETTINGS
 
 config ZMK_OS_DETECTION_BLE_GATT_CLIENT_PROBE
     bool "Opt-in: discover ANCS/AMS/Device Name as a GATT client after pairing"

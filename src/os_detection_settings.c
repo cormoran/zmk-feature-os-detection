@@ -12,66 +12,51 @@
 
 #include "os_detection_internal.h"
 
-/* One pair of settings per BLE profile: "ble_detected/<i>" (last auto-guess,
- * cached across reboots) and "ble_override/<i>" (manual override from the
- * Custom Studio RPC web UI, ZMK_OS_UNKNOWN == AUTO). Written out explicitly
- * per index (rather than generated with LISTIFY) to keep the
- * STRUCT_SECTION_ITERABLE static initializers simple - see the
- * ZMK_CUSTOM_SETTING_RANGE_INT32 pitfall noted in DESIGN.md for why these
- * use ZMK_CUSTOM_SETTING_NO_CONSTRAINT instead of a range constraint. */
-
-#define OS_DETECTION_SETTING_DETECTED(_i)                                                          \
-    ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE(                                                       \
-        os_detection_ble_detected_##_i, "cormoran__os_detection", "ble_detected", _i,              \
-        ZMK_BLE_PROFILE_COUNT, ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32,                                \
-        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN),                                            \
-        ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,     \
-        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
-
-#define OS_DETECTION_SETTING_OVERRIDE(_i)                                                          \
-    ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE(                                                       \
-        os_detection_ble_override_##_i, "cormoran__os_detection", "ble_override", _i,              \
-        ZMK_BLE_PROFILE_COUNT, ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32,                                \
-        ZMK_CUSTOM_SETTING_VALUE_INT32(ZMK_OS_UNKNOWN),                                            \
-        ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC, ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,     \
-        ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE, ZMK_CUSTOM_SETTING_NO_CONSTRAINT)
+/* One array setting per key: "ble_detected" (last auto-guess, cached across
+ * reboots) and "ble_override" (manual override from the Custom Studio RPC web
+ * UI, ZMK_OS_UNKNOWN == AUTO). Each has one element per BLE profile, indexed by
+ * profile.
+ *
+ * zmk-feature-custom-settings' P3 rework replaced the old
+ * ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE (one STRUCT_SECTION_ITERABLE
+ * descriptor per element) with a single ZMK_CUSTOM_SETTING_ARRAY_DEFINE that
+ * owns one contiguous backing buffer for the whole array - so we register the
+ * two arrays once here instead of expanding a per-index macro in a #if ladder.
+ * The elements are still reached individually with
+ * zmk_custom_setting_find_array_element() below.
+ *
+ * The defaults array is a plain pointer (not a compound literal) and both
+ * arrays share it since every element defaults to ZMK_OS_UNKNOWN; it is sized
+ * for the 8-profile ceiling (>= ZMK_BLE_PROFILE_COUNT), the array registration
+ * only consumes its first ZMK_BLE_PROFILE_COUNT entries. NO_CONSTRAINT is used
+ * instead of a range constraint - see the ZMK_CUSTOM_SETTING_RANGE_INT32
+ * pitfall noted in DESIGN.md. */
 
 /* CONFIG_ZMK_BLE_PROFILE_COUNT (== CONFIG_BT_MAX_PAIRED, minus split
  * peripherals) defaults to 5; support up to 8 to leave headroom. */
-#if ZMK_BLE_PROFILE_COUNT > 0
-OS_DETECTION_SETTING_DETECTED(0);
-OS_DETECTION_SETTING_OVERRIDE(0);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 1
-OS_DETECTION_SETTING_DETECTED(1);
-OS_DETECTION_SETTING_OVERRIDE(1);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 2
-OS_DETECTION_SETTING_DETECTED(2);
-OS_DETECTION_SETTING_OVERRIDE(2);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 3
-OS_DETECTION_SETTING_DETECTED(3);
-OS_DETECTION_SETTING_OVERRIDE(3);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 4
-OS_DETECTION_SETTING_DETECTED(4);
-OS_DETECTION_SETTING_OVERRIDE(4);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 5
-OS_DETECTION_SETTING_DETECTED(5);
-OS_DETECTION_SETTING_OVERRIDE(5);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 6
-OS_DETECTION_SETTING_DETECTED(6);
-OS_DETECTION_SETTING_OVERRIDE(6);
-#endif
-#if ZMK_BLE_PROFILE_COUNT > 7
-OS_DETECTION_SETTING_DETECTED(7);
-OS_DETECTION_SETTING_OVERRIDE(7);
-#endif
 BUILD_ASSERT(ZMK_BLE_PROFILE_COUNT <= 8,
              "zmk-feature-os-detection only defines settings for up to 8 BLE profiles");
+
+ZMK_CUSTOM_SETTING_ARRAY_DEFAULT_INT32_DEFINE(os_detection_ble_defaults, ZMK_OS_UNKNOWN,
+                                              ZMK_OS_UNKNOWN, ZMK_OS_UNKNOWN, ZMK_OS_UNKNOWN,
+                                              ZMK_OS_UNKNOWN, ZMK_OS_UNKNOWN, ZMK_OS_UNKNOWN,
+                                              ZMK_OS_UNKNOWN);
+
+ZMK_CUSTOM_SETTING_ARRAY_DEFINE(os_detection_ble_detected, "cormoran__os_detection", "ble_detected",
+                                ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32, ZMK_BLE_PROFILE_COUNT,
+                                ZMK_BLE_PROFILE_COUNT, os_detection_ble_defaults,
+                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC,
+                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_NO_CONSTRAINT);
+
+ZMK_CUSTOM_SETTING_ARRAY_DEFINE(os_detection_ble_override, "cormoran__os_detection", "ble_override",
+                                ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32, ZMK_BLE_PROFILE_COUNT,
+                                ZMK_BLE_PROFILE_COUNT, os_detection_ble_defaults,
+                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC,
+                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_NO_CONSTRAINT);
 
 static const struct zmk_custom_setting *find_setting(const char *key, uint8_t profile_index) {
     return zmk_custom_setting_find_array_element("cormoran__os_detection", key, profile_index);

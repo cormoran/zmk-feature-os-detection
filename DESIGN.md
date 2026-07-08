@@ -279,11 +279,17 @@ unmodified under `ZMK_OS_DETECTION_TEST_INJECT` on native_sim.
     This environment has no way to pair the board with real Windows/macOS/
     Linux BLE hosts either (no Bluetooth radio exposed to the sandbox) — same
     placeholder-table approach as USB, documented in `docs/fingerprints.md`.
-- Persistence via `zmk-feature-custom-settings`, one pair of settings per BLE
-  profile index using `ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE` repeated with
-  `LISTIFY(CONFIG_ZMK_BLE_PROFILE_COUNT, ...)`:
-  - `ble_detected/<i>` (`INT32`, default `ZMK_OS_UNKNOWN`) — last auto-guess.
-  - `ble_override/<i>` (`INT32`, default `0` == `ZMK_OS_UNKNOWN` == AUTO).
+- Persistence via `zmk-feature-custom-settings`, two `INT32` array settings
+  registered once each with `ZMK_CUSTOM_SETTING_ARRAY_DEFINE` (one element per
+  BLE profile, `_max_count`/`_default_size` == `ZMK_BLE_PROFILE_COUNT`). This
+  replaces the old per-element `ZMK_CUSTOM_SETTING_ARRAY_ELEMENT_DEFINE` +
+  `#if` ladder, removed by that module's P3 rework in favour of one descriptor
+  owning a single contiguous backing buffer. Individual profiles are still
+  reached with `zmk_custom_setting_find_array_element(...)`. The module
+  `select`s `ZMK_CUSTOM_SETTINGS_ARRAY` (see `Kconfig`) so the array feature
+  is force-enabled when custom settings are present.
+  - `ble_detected[i]` (`INT32`, default `ZMK_OS_UNKNOWN`) — last auto-guess.
+  - `ble_override[i]` (`INT32`, default `0` == `ZMK_OS_UNKNOWN` == AUTO).
   - Use `ZMK_CUSTOM_SETTING_NO_CONSTRAINT`, **not**
     `ZMK_CUSTOM_SETTING_RANGE_INT32` — the latter is a known compile failure
     (nested compound literal in a `STRUCT_SECTION_ITERABLE` static

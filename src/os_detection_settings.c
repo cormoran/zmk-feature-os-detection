@@ -45,17 +45,17 @@ ZMK_CUSTOM_SETTING_ARRAY_DEFAULT_INT32_DEFINE(os_detection_ble_defaults, ZMK_OS_
 ZMK_CUSTOM_SETTING_ARRAY_DEFINE(os_detection_ble_detected, "cormoran__os_detection", "ble_detected",
                                 ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32, ZMK_BLE_PROFILE_COUNT,
                                 ZMK_BLE_PROFILE_COUNT, os_detection_ble_defaults,
-                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC,
+                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PERSONAL,
                                 ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
-                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_PERMISSION_SECURE,
                                 ZMK_CUSTOM_SETTING_NO_CONSTRAINT);
 
 ZMK_CUSTOM_SETTING_ARRAY_DEFINE(os_detection_ble_override, "cormoran__os_detection", "ble_override",
                                 ZMK_CUSTOM_SETTING_VALUE_TYPE_INT32, ZMK_BLE_PROFILE_COUNT,
                                 ZMK_BLE_PROFILE_COUNT, os_detection_ble_defaults,
-                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PUBLIC,
+                                ZMK_CUSTOM_SETTING_CONFIDENTIALITY_RPC_PERSONAL,
                                 ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
-                                ZMK_CUSTOM_SETTING_PERMISSION_UNSECURE,
+                                ZMK_CUSTOM_SETTING_PERMISSION_SECURE,
                                 ZMK_CUSTOM_SETTING_NO_CONSTRAINT);
 
 static const struct zmk_custom_setting *find_setting(const char *key, uint8_t profile_index) {

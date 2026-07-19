@@ -84,19 +84,26 @@ enum zmk_os zmk_os_classify_usb(const struct usb_fp_stats *stats) {
     bool short_probe_seen = stats->string_wlength_hist[USB_FP_WLENGTH_2] > 0;
     bool full_reread_seen = stats->string_wlength_other > 0;
 
-    /* macOS/iOS (VERIFIED, 2026-07-05 real captures): every descriptor -
-     * device, each string, configuration - is read as a short 2-byte
-     * header probe followed by a full-length re-read. This is independent
-     * of the BOS fix above (macOS/iOS are dispatched purely on string
-     * shape, before either OS-specific BOS/Linux check below is reached),
-     * so it hasn't been re-verified against the now-spec-valid BOS - not
-     * expected to matter, since neither branch here inspects
-     * stats->bos_wlength. macOS and iOS share this exact descriptor-read
-     * pattern; the only observed difference is that iOS sends
-     * SET_FEATURE(DEVICE_REMOTE_WAKEUP) after enumerating and real macOS
-     * didn't. */
+    /* macOS/iOS (VERIFIED, 2026-07-05 and re-verified 2026-07-19 real
+     * captures): every descriptor - device, each string, configuration - is
+     * read as a short 2-byte header probe followed by a full-length re-read.
+     * This is independent of the BOS fix above (Apple hosts are dispatched
+     * purely on string shape, before either OS-specific BOS/Linux check
+     * below is reached), so it's checked here first.
+     *
+     * Reported as macOS, NOT iOS: over USB, macOS and iOS are the same
+     * Apple USB stack and enumerate identically - they cannot be reliably
+     * distinguished here, the same way Android/ChromeOS can't be told apart
+     * from desktop Linux over USB (see docs/fingerprints.md). An earlier
+     * revision split iOS out on SET_FEATURE(DEVICE_REMOTE_WAKEUP) sent after
+     * SET_CONFIGURATION, but a 2026-07-19 side-by-side capture of a real Mac
+     * and a real iPhone showed BOTH send it - the original macOS capture had
+     * simply stopped one packet early, at SET_CONFIGURATION, before macOS
+     * sends it. That heuristic was therefore removed; a real Mac on USB was
+     * being misdetected as iOS. iOS is still detected over BLE (ANCS/AMS -
+     * see os_detection_ble.c), where the distinction is real. */
     if (short_probe_seen && full_reread_seen) {
-        return stats->remote_wakeup_enabled ? ZMK_OS_IOS : ZMK_OS_MACOS;
+        return ZMK_OS_MACOS;
     }
 
     /* Windows (RE-VERIFIED 2026-07-05, after the BOS fix above): reads BOS
@@ -156,13 +163,6 @@ void zmk_os_detection_observe_setup(const struct usb_setup_packet *setup) {
         return;
     }
 
-    if (setup->bRequest == USB_SREQ_SET_FEATURE && !usb_reqtype_is_to_host(setup) &&
-        setup->wValue == USB_SFS_REMOTE_WAKEUP) {
-        stats.remote_wakeup_enabled = true;
-        k_work_reschedule(&usb_settle_work, K_MSEC(CONFIG_ZMK_OS_DETECTION_USB_SETTLE_MS));
-        return;
-    }
-
     if (setup->bRequest != USB_SREQ_GET_DESCRIPTOR || !usb_reqtype_is_to_host(setup)) {
         return;
     }
@@ -217,6 +217,10 @@ static void inject_setup(uint8_t bRequest, uint8_t descriptor_type, uint16_t wLe
     zmk_os_detection_observe_setup(&setup);
 }
 
+/* Both a real Mac and a real iPhone send this right after SET_CONFIGURATION
+ * (2026-07-19 side-by-side capture) - it is deliberately NOT a classification
+ * signal anymore (see zmk_os_classify_usb()). Injected here only to prove the
+ * classifier ignores it and still reports macOS for the Apple pattern. */
 static void inject_set_feature_remote_wakeup(void) {
     struct usb_setup_packet setup = {
         .bmRequestType = 0x00, /* host-to-device, standard, device recipient */
@@ -267,12 +271,15 @@ static void inject_macos_like(void) {
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
 }
 
-/* Matches the real capture in docs/fingerprints.md: identical descriptor
- * read pattern to inject_macos_like() (short probe then full re-read on
- * every string, minimal BOS), plus a SET_FEATURE(DEVICE_REMOTE_WAKEUP)
- * after enumeration - the one observed difference between a real iPhone
- * and real macOS. */
-static void inject_ios_like(void) {
+/* Matches the 2026-07-19 real captures in docs/fingerprints.md: a real Mac
+ * and a real iPhone captured side by side enumerated IDENTICALLY through this
+ * point - device probed at wLength=8, short-probe-then-full re-read on every
+ * string and on configuration, BOS read as a two-step 5-then-12 dance, then
+ * SET_FEATURE(DEVICE_REMOTE_WAKEUP). Because macOS and iOS are indistinguishable
+ * over USB, this scenario asserts the classifier reports macOS (ZMK_OS_MACOS,
+ * value 2) - specifically guarding against the earlier regression where the
+ * REMOTE_WAKEUP packet made a real Mac misdetect as iOS. */
+static void inject_apple_with_remote_wakeup(void) {
     inject_setup(USB_SREQ_SET_ADDRESS, 0, 0);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 8);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_DEVICE, 18);
@@ -285,6 +292,7 @@ static void inject_ios_like(void) {
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 9);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_CONFIGURATION, 34);
     inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 5);
+    inject_setup(USB_SREQ_GET_DESCRIPTOR, USB_DESC_BOS, 12);
     inject_set_feature_remote_wakeup();
 }
 
@@ -335,10 +343,13 @@ static int os_detection_test_inject_init(void) {
     inject_macos_like();
     k_sleep(K_MSEC(settle_margin_ms));
 
-    inject_ios_like();
+    inject_linux_like();
     k_sleep(K_MSEC(settle_margin_ms));
 
-    inject_linux_like();
+    /* Last so its macOS result is distinct from the previous scenario's
+     * (Linux) - zmk_os_detection_report_usb() only logs on a change, so two
+     * adjacent macOS(2) scenarios would collapse to one snapshot line. */
+    inject_apple_with_remote_wakeup();
     k_sleep(K_MSEC(settle_margin_ms));
 
     return 0;

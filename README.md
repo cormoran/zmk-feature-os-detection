@@ -169,15 +169,16 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   pattern (real capture, 2026-07-05) turned out to actually differ from
   desktop Linux's (it never reads GAP Appearance), so `ZMK_OS_ANDROID` is a
   distinct value reachable only via BLE detection, not USB.
-- **macOS and iOS *are* distinguished** (real captures, 2026-07-05 - see
-  [docs/fingerprints.md](docs/fingerprints.md)), which is narrower than
-  most USB fingerprinting folklore claims (both use the same Apple USB
-  stack heritage and an almost identical descriptor-read pattern). The one
-  real difference found: iOS sends `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`
-  after enumerating and macOS didn't in the captured session. Treat this as
-  verified-but-narrow - it hasn't been checked across multiple OS versions
-  or a macOS session watched long enough to rule out sending the same
-  request later.
+- **macOS and iOS are NOT distinguished over USB; both report `ZMK_OS_MACOS`.**
+  A 2026-07-19 side-by-side capture of a real Mac and a real iPhone (see
+  [docs/fingerprints.md](docs/fingerprints.md)) found their USB enumeration
+  byte-for-byte identical — they share Apple's USB stack. An earlier revision
+  split iOS out because a real iPhone sent `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`,
+  but the real Mac sends it too (the earlier macOS capture had just stopped one
+  packet too early), so a Mac was being misdetected as iOS; that heuristic was
+  removed. This is the same "shared stack ⇒ can't tell apart over USB" situation
+  as ChromeOS/Android above. `ZMK_OS_IOS` is still produced over **BLE** (opt-in
+  ANCS/AMS probe), where the distinction is real.
 - **KVM switches and some USB hubs don't force re-enumeration** on switch,
   so USB detection can miss a host change until the next physical
   reconnect.
@@ -214,9 +215,11 @@ Pages automatically (see `.github/workflows/web-ui.yml`).
   ZMK.
 - **Split keyboards**: detection only runs on the central side, since only
   the central owns the USB/BLE host connection.
-- USB detection is verified against real captures for macOS, Windows,
-  Linux, and iOS, plus Android confirmed to enumerate identically to Linux
-  (all 2026-07-05). BLE detection is verified against real captures for
+- USB detection is verified against real captures for macOS, Windows, and
+  Linux (2026-07-05), plus Android confirmed to enumerate identically to Linux
+  and a real Mac + iPhone confirmed to enumerate identically to each other
+  (both report macOS) on 2026-07-19. BLE detection is verified against real
+  captures for
   Windows, Linux (see above - resolves to Windows on purpose), Android
   (reported distinctly as `ZMK_OS_ANDROID`), and (partially - DIS/HIDS
   Report Map only) macOS and iPhone, also 2026-07-05.

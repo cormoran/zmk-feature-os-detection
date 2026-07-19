@@ -357,7 +357,55 @@ past the debounce window that already settled on `ZMK_OS_LINUX`), but
 recorded here in case a future capture shows it's actually a stable,
 distinguishing signal worth acting on.
 
-### Real iPhone (iOS) capture (2026-07-05, verified) — iOS split out from macOS
+### ⚠️ Mac + iPhone side-by-side capture (2026-07-19) — iOS folded back into macOS over USB
+
+**This supersedes the 2026-07-05 iOS split below for USB.** A user reported a
+real Mac being detected as **iOS** over USB. Two test boards were captured
+simultaneously — one plugged into a real Mac, one into a real iPhone (same rig,
+same debug build, same RTT recipe) — to find the actual difference.
+
+Both hosts enumerated **byte-for-byte identically** through the HID `REPORT`
+read, *including* `SET_FEATURE(DEVICE_REMOTE_WAKEUP)` right after
+`SET_CONFIGURATION`:
+
+```
+GET_DESCRIPTOR(DEVICE)         wLength=8    (probe)
+GET_DESCRIPTOR(DEVICE)         wLength=18   (full)
+GET_DESCRIPTOR(STRING, idx=2)  wLength=2, then 24
+GET_DESCRIPTOR(STRING, idx=1)  wLength=2, then 24
+GET_DESCRIPTOR(STRING, idx=3)  wLength=2, then 34
+GET_DESCRIPTOR(CONFIGURATION)  wLength=9, then 34
+GET_DESCRIPTOR(BOS)            wLength=5, then 12   (two-step now BOS is spec-valid)
+SET_CONFIGURATION(1)
+SET_FEATURE(DEVICE_REMOTE_WAKEUP)   ← BOTH Mac and iPhone send this
+GET_DESCRIPTOR(REPORT)         wLength=77
+```
+
+So `SET_FEATURE(DEVICE_REMOTE_WAKEUP)` — the *only* signal the 2026-07-05 split
+used to call something "iOS" — is **not iOS-specific**. The 2026-07-05 macOS
+capture simply stopped one packet early, at `SET_CONFIGURATION`, before macOS
+sends it; the very caveat in that section ("the real macOS capture simply
+wasn't watched past `SET_CONFIGURATION`") was exactly the hole. Each capture was
+reproduced twice per host; the mapping was then confirmed by unplugging the Mac
+(its board lost USB power and its J-Link dropped) while the iPhone board kept
+enumerating.
+
+The one stable, reproducible difference was **post-enumeration and post-settle**
+and so useless for classification: the Mac did an extra trailing
+`GET_DESCRIPTOR(STRING, index=0)` at `wLength=255` (a language-ID re-read) that
+the iPhone did not. Keying "iOS" on the *absence* of a late, optional read is
+precisely the fragile pattern that has misfired in this file before, so it was
+**not** adopted — recorded here only as a lead.
+
+**Fix (2026-07-19):** `zmk_os_classify_usb()`'s Apple branch now returns
+`ZMK_OS_MACOS` unconditionally; the `remote_wakeup_enabled` stat and its
+`SET_FEATURE` observation were removed. Over USB, macOS and iOS are treated as
+indistinguishable — the same documented stance as Android/ChromeOS folding into
+`ZMK_OS_LINUX`. `ZMK_OS_IOS` still exists and is still produced over **BLE**
+(ANCS/AMS), where the distinction is real. Re-verified on hardware: the iPhone
+board, which still sends `REMOTE_WAKEUP`, now settles on `2` (macOS).
+
+### Real iPhone (iOS) capture (2026-07-05, verified — SUPERSEDED for USB, see above) — iOS split out from macOS
 
 **Method**: identical recipe again, board's USB-C moved to a real iPhone.
 
@@ -412,13 +460,13 @@ branch now correctly returns `ZMK_OS_IOS`. This is still an unverified BLE
 placeholder either way (no real BLE capture exists yet), just a more
 technically accurate one.
 
-**Caveat**: this is one data point. `SET_FEATURE(DEVICE_REMOTE_WAKEUP)`
-being iOS-specific-and-always-present is not something that's been checked
-against multiple iOS versions or multiple real Mac sessions run long
-enough to be sure macOS categorically never sends it later in a session
-(the real macOS capture simply wasn't watched past `SET_CONFIGURATION`).
-Treat `ZMK_OS_IOS` as verified-but-narrow, same caution as every other
-branch in this file.
+**Caveat — and this caveat came true**: this was one data point, and the
+`SET_FEATURE(DEVICE_REMOTE_WAKEUP)` signal was never checked against a real Mac
+watched past `SET_CONFIGURATION`. The 2026-07-19 side-by-side capture (see the
+"Mac + iPhone side-by-side capture" section above) did exactly that and found a
+real Mac sends `REMOTE_WAKEUP` too — so this USB-based iOS split was removed and
+iOS is folded back into macOS over USB. This section is left for the historical
+record; the classifier no longer uses `remote_wakeup` at all.
 
 ### RTT capture recipe (for the next real-hardware session)
 
@@ -466,29 +514,30 @@ above (macOS, Windows, Linux, Android, iOS).
 
 ### Still unverified
 
-USB is now verified for macOS, Windows, Linux, Android (as Linux), and iOS.
-Only **BLE** remains entirely unverified (see below) — and even for USB,
-treat "verified" as "verified against one specific version of one specific
-OS on 2026-07-05", not "guaranteed for every version forever".
+USB is verified for macOS, Windows, Linux, and Android (as Linux). iOS is
+**not** distinguished from macOS over USB (both are Apple's shared USB stack and
+enumerate identically — see the 2026-07-19 side-by-side capture above); the
+Apple pattern reports macOS. Only **BLE** remains entirely unverified (see
+below) — and even for USB, treat "verified" as "verified against one specific
+version of one specific OS", not "guaranteed for every version forever".
 `CONFIG_ZMK_OS_DETECTION_TEST_INJECT` lets any future threshold change be
 regression-tested with `tests/os_detection_usb` alone, no hardware required
 for the re-verification step, if a different OS version's real behavior
 turns out to differ from what's captured here.
 
 Known fragility (see README "Known limitations" for the full list): the
-wLength pattern is OS-version-dependent. USB alone still cannot distinguish
-ChromeOS from Linux (both share the kernel), but macOS and iOS **are** now
-distinguished (see the iPhone capture above) — narrower than the original
-task brief assumed, on one signal only.
+wLength pattern is OS-version-dependent. USB alone cannot distinguish
+ChromeOS/Android from Linux (shared kernel) nor iOS from macOS (shared Apple
+USB stack) — the latter reconfirmed 2026-07-19, correcting an earlier, briefly
+held belief that `SET_FEATURE(DEVICE_REMOTE_WAKEUP)` split them.
 
 **2026-07-05, second session**: a real BOS-descriptor bug (this module's
 own, not a classifier heuristic — see "Windows enumeration failure
 discovered and fixed" above) was found and fixed, and Windows + Linux were
-both re-verified against the fix. **macOS and iOS have not been
-re-verified against the fix** — their classification logic doesn't consult
-the BOS length so it isn't expected to be affected, but no fresh real
-capture confirms that. If a Mac or iPhone becomes available, capturing
-against the current firmware would close that gap.
+both re-verified against the fix. macOS/iOS were re-verified against it on
+2026-07-19 (see the side-by-side capture above): the BOS is now read as a
+two-step 5-then-12 dance by Apple hosts too, matching Linux, and — as predicted
+— it doesn't affect the Apple branch, which dispatches on string shape.
 
 ## BLE
 
